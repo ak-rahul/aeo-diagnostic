@@ -1,5 +1,5 @@
 """
-main.py — FastAPI application: Pixii AEO Diagnostic
+main.py — FastAPI application: AEO Diagnostic
 Improvements over v1:
   - TTLCache for repeat queries (5-min TTL)
   - Structured logging via structlog
@@ -35,7 +35,7 @@ load_dotenv()
 
 # ── App ────────────────────────────────────────────────────────────────────────
 app = FastAPI(
-    title="Pixii AEO Diagnostic API",
+    title="AEO Diagnostic API",
     description="Real-time AI visibility & Answer Engine Optimisation for e-commerce brands.",
     version="1.1.0",
     docs_url="/api/docs",
@@ -230,7 +230,7 @@ async def _generate_pdf_response(result: dict) -> Response:
         loop = asyncio.get_event_loop()
         pdf_bytes = await loop.run_in_executor(None, generate_pdf_bytes, result)
         ts = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
-        filename = f"pixii-aeo-{ts}.pdf"
+        filename = f"aeo-report-{ts}.pdf"
         return Response(
             content=pdf_bytes,
             media_type="application/pdf",

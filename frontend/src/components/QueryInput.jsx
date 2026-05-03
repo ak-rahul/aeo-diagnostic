@@ -15,7 +15,7 @@ const STEPS = [
   { id: 'analysing', label: 'Synthesizing Gaps' },
 ];
 
-export default function QueryInput({ onSubmit, isLoading, step }) {
+export default function QueryInput({ onSubmit, onCancel, isLoading, step }) {
   const [query, setQuery] = useState('');
   const [brand, setBrand] = useState('');
   const [history, setHistory] = useState([]);
@@ -23,7 +23,7 @@ export default function QueryInput({ onSubmit, isLoading, step }) {
 
   useEffect(() => {
     try {
-      const saved = JSON.parse(localStorage.getItem('pixii_history') || '[]');
+      const saved = JSON.parse(localStorage.getItem('aeo_history') || '[]');
       if (Array.isArray(saved)) setHistory(saved.slice(0, 5));
     } catch (e) {}
   }, []);
@@ -35,7 +35,7 @@ export default function QueryInput({ onSubmit, isLoading, step }) {
     
     const newHistory = [cleanQuery, ...history.filter(q => q !== cleanQuery)].slice(0, 5);
     setHistory(newHistory);
-    localStorage.setItem('pixii_history', JSON.stringify(newHistory));
+    localStorage.setItem('aeo_history', JSON.stringify(newHistory));
     
     onSubmit({ query: cleanQuery, userBrand: brand.trim() });
   };
@@ -73,24 +73,41 @@ export default function QueryInput({ onSubmit, isLoading, step }) {
             />
           </div>
           
-          <button type="submit" className="btn-primary" disabled={!query.trim() || isLoading}>
-            {isLoading ? (
-              <><Loader2 className="animate-spin" size={16} /> Processing</>
-            ) : (
-              <><Search size={16} /> Run Diagnostic</>
+          <div style={{ display: 'flex', gap: 8 }}>
+            {isLoading && onCancel && (
+              <button type="button" onClick={onCancel} className="btn-secondary" style={{ color: 'var(--danger)', borderColor: 'var(--danger-bg)' }}>
+                Cancel
+              </button>
             )}
-          </button>
+            <button type="submit" className="btn-primary" disabled={!query.trim() || isLoading}>
+              {isLoading ? (
+                <><Loader2 className="animate-spin" size={16} /> Processing</>
+              ) : (
+                <><Search size={16} /> Run Diagnostic</>
+              )}
+            </button>
+          </div>
         </div>
       </form>
 
       {!isLoading && (
         <motion.div className="demo-chips" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.5 }}>
-          {history.length > 0 && <span style={{ fontSize: 11, color: 'var(--text-muted)', paddingTop: 6, display: 'flex', alignItems: 'center', gap: 4 }}><Clock size={12}/> Recent:</span>}
-          {history.map(q => (
-            <div key={`hist-${q}`} className="demo-chip" onClick={() => { setQuery(q); taRef.current?.focus(); }} style={{ borderColor: 'var(--border-glow)' }}>
-              {q}
+          {history.length > 0 && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', justifyContent: 'center' }}>
+              <span style={{ fontSize: 11, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 4 }}><Clock size={12}/> Recent:</span>
+              {history.map(q => (
+                <div key={`hist-${q}`} className="demo-chip" onClick={() => { setQuery(q); taRef.current?.focus(); }} style={{ borderColor: 'var(--border-glow)' }}>
+                  {q}
+                </div>
+              ))}
+              <button 
+                onClick={() => { setHistory([]); localStorage.removeItem('aeo_history'); }}
+                style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', fontSize: 11, cursor: 'pointer', textDecoration: 'underline' }}
+              >
+                Clear
+              </button>
             </div>
-          ))}
+          )}
           {history.length === 0 && <span style={{ fontSize: 11, color: 'var(--text-muted)', paddingTop: 6 }}>Try:</span>}
           {(history.length === 0 ? DEMO_QUERIES : []).map(q => (
             <div key={q} className="demo-chip" onClick={() => { setQuery(q); taRef.current?.focus(); }}>

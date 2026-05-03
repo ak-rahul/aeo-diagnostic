@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Bot, Sparkles, Download, Search } from 'lucide-react';
 import './index.css';
@@ -19,6 +19,15 @@ export default function App() {
   const [step, setStep]       = useState(null);
   const [isDemo, setIsDemo]   = useState(false);
   const [brand, setBrand]     = useState('');
+  const abortControllerRef = useRef(null);
+
+  const handleCancel = useCallback(() => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      setLoading(false);
+      setStep(null);
+    }
+  }, []);
 
   const run = useCallback(async ({ query, userBrand }) => {
     setLoading(true);
@@ -26,6 +35,8 @@ export default function App() {
     setIsDemo(false);
     setBrand(userBrand);
     setStep('calling');
+
+    abortControllerRef.current = new AbortController();
 
     const timers = [
       setTimeout(() => setStep('extracting'), 5000),
@@ -38,6 +49,7 @@ export default function App() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ query, user_brand: userBrand, listing_text: '', use_demo: false }),
+        signal: abortControllerRef.current.signal,
       });
       timers.forEach(clearTimeout);
       if (!res.ok) throw new Error('API Error');
@@ -46,6 +58,8 @@ export default function App() {
       setResult(data);
     } catch (err) {
       timers.forEach(clearTimeout);
+      if (err.name === 'AbortError') return; // Do not show demo if manually cancelled
+
       const demo = structuredClone(DEMO_RESULT);
       demo.query = query;
       demo.user_brand = userBrand;
@@ -78,7 +92,7 @@ export default function App() {
       if (!res.ok) throw new Error('Export Failed');
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
-      const a = Object.assign(document.createElement('a'), { href: url, download: 'pixii-aeo-report.pdf' });
+      const a = Object.assign(document.createElement('a'), { href: url, download: 'aeo-report.pdf' });
       a.click();
     } catch {
       alert('PDF export requires the FastAPI backend running.');
@@ -95,8 +109,7 @@ export default function App() {
       {/* Navbar */}
       <nav className="navbar">
         <div className="brand-logo">
-          <Bot size={24} />
-          <span>pixii.ai</span>
+          <span>Nexus AEO</span>
           <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>/</span>
           <span style={{ fontSize: 14, color: 'var(--text-secondary)', fontWeight: 500 }}>AEO Diagnostic</span>
         </div>
@@ -125,7 +138,7 @@ export default function App() {
           and uncover the actionable gaps keeping you off the AI leaderboard.
         </p>
 
-        <QueryInput onSubmit={run} isLoading={loading} step={step} />
+        <QueryInput onSubmit={run} onCancel={handleCancel} isLoading={loading} step={step} />
       </motion.section>
 
       {/* Main Content */}

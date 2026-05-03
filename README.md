@@ -1,4 +1,4 @@
-# Pixii AEO Diagnostic 🚀
+# AEO Diagnostic 🚀
 ### AI Visibility Report Card for E-Commerce Brands
 
 > *"Google has SEO tools worth $5 billion. AI search is replacing Google. Nobody has built the SEO equivalent for ChatGPT, Claude, and Gemini — until now."*

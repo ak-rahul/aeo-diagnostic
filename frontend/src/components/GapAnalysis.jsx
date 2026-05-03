@@ -1,7 +1,10 @@
 import { motion } from 'framer-motion';
-import { Lightbulb, AlertTriangle, Zap } from 'lucide-react';
+import { Lightbulb, AlertTriangle, Zap, Copy, CheckCircle2 } from 'lucide-react';
+import { useState } from 'react';
 
 export default function GapAnalysis({ gapAnalysis }) {
+  const [copied, setCopied] = useState(false);
+  
   if (!gapAnalysis) return null;
   const { gaps = [], overall_verdict, quick_win, estimated_score_if_fixed } = gapAnalysis;
   const sorted = [...gaps].sort((a, b) => {
@@ -9,8 +12,22 @@ export default function GapAnalysis({ gapAnalysis }) {
     return (o[a.priority] ?? 2) - (o[b.priority] ?? 2);
   });
 
+  const handleCopy = () => {
+    const text = `AEO Gap Analysis\n\nVerdict: ${overall_verdict || 'N/A'}\nQuick Win: ${quick_win || 'N/A'}\n\nGaps:\n` + 
+                 sorted.map((g, i) => `${i+1}. [${g.priority.toUpperCase()}] ${g.gap}\n   Action: ${g.action}`).join('\n\n');
+    navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: -16 }}>
+        <button onClick={handleCopy} className="btn-secondary" style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, padding: '4px 10px' }}>
+          {copied ? <CheckCircle2 size={14} color="var(--success)"/> : <Copy size={14} />}
+          {copied ? 'Copied!' : 'Copy Analysis'}
+        </button>
+      </div>
       {/* Verdict & Quick Win */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24 }}>
         {overall_verdict && (

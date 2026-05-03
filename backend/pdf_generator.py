@@ -52,7 +52,7 @@ HTML_TEMPLATE = """
 <body>
   <div class="header">
     <div>
-      <div class="logo">pixii.ai</div>
+      <div class="logo">Nexus AEO</div>
       <div style="font-size:12px; color:#94a3b8; margin-top:4px;">AEO Diagnostic Report</div>
     </div>
     <div>
@@ -134,7 +134,7 @@ HTML_TEMPLATE = """
   </table>
 
   <div class="footer">
-    <strong>pixii.ai</strong> — The AI intelligence layer for e-commerce brands<br>
+    <strong>Nexus AEO</strong> — The AI intelligence layer for e-commerce brands<br>
     Report generated {{ date }} · AEO Diagnostic v1.0 · Powered by GPT-4o, Claude Sonnet & Gemini 1.5 Pro
   </div>
 </body>

@@ -34,4 +34,4 @@ def configure_logging(level: str = "INFO") -> None:
 
 
 configure_logging()
-log = structlog.get_logger("pixii.aeo")
+log = structlog.get_logger("nexus.aeo")
