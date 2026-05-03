@@ -14,11 +14,11 @@ import { DEMO_RESULT } from './constants';
 const API_BASE = import.meta.env.VITE_API_URL || '';
 
 export default function App() {
-  const [result, setResult]   = useState(null);
+  const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [step, setStep]       = useState(null);
-  const [isDemo, setIsDemo]   = useState(false);
-  const [brand, setBrand]     = useState('');
+  const [step, setStep] = useState(null);
+  const [isDemo, setIsDemo] = useState(false);
+  const [brand, setBrand] = useState('');
   const abortControllerRef = useRef(null);
 
   const handleCancel = useCallback(() => {
@@ -40,8 +40,8 @@ export default function App() {
 
     const timers = [
       setTimeout(() => setStep('extracting'), 5000),
-      setTimeout(() => setStep('scoring'),    10000),
-      setTimeout(() => setStep('analysing'),  14000),
+      setTimeout(() => setStep('scoring'), 10000),
+      setTimeout(() => setStep('analysing'), 14000),
     ];
 
     try {
@@ -105,13 +105,12 @@ export default function App() {
   return (
     <div className="app-container">
       <div className="bg-grid" />
-      
+
       {/* Navbar */}
       <nav className="navbar">
         <div className="brand-logo">
-          <span>Nexus AEO</span>
-          <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>/</span>
-          <span style={{ fontSize: 14, color: 'var(--text-secondary)', fontWeight: 500 }}>AEO Diagnostic</span>
+          <Sparkles size={22} className="text-gradient-accent" />
+          <span>AEO Diagnostic</span>
         </div>
         <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
           <div style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--success)', boxShadow: '0 0 10px var(--success)' }} />
@@ -120,7 +119,7 @@ export default function App() {
       </nav>
 
       {/* Hero */}
-      <motion.section 
+      <motion.section
         className="hero-section"
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -134,7 +133,7 @@ export default function App() {
           Is your brand invisible to <span className="text-gradient-accent">AI Search?</span>
         </h1>
         <p className="hero-subtitle">
-          Discover exactly how ChatGPT, Claude & Gemini rank your products, 
+          Discover exactly how ChatGPT, Claude & Gemini rank your products,
           and uncover the actionable gaps keeping you off the AI leaderboard.
         </p>
 
@@ -145,10 +144,10 @@ export default function App() {
       <main className="main-content">
         <AnimatePresence>
           {isDemo && (
-            <motion.div 
+            <motion.div
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: 'auto' }}
-              className="glass" 
+              className="glass"
               style={{ padding: 16, borderRadius: 'var(--radius-md)', borderLeft: '4px solid var(--warning)', display: 'flex', gap: 12, alignItems: 'center' }}
             >
               <span style={{ fontSize: 20 }}>⚠️</span>
@@ -159,7 +158,7 @@ export default function App() {
           )}
 
           {(loading || hasResults) && (
-            <motion.section 
+            <motion.section
               initial={{ opacity: 0, y: 30 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.1, duration: 0.6 }}
@@ -174,7 +173,7 @@ export default function App() {
           )}
 
           {hasResults && brand && (
-            <motion.section 
+            <motion.section
               initial={{ opacity: 0, y: 30 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.2, duration: 0.6 }}
@@ -190,7 +189,7 @@ export default function App() {
           )}
 
           {showGap && (
-            <motion.section 
+            <motion.section
               initial={{ opacity: 0, y: 30 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.3, duration: 0.6 }}

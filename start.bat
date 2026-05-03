@@ -1,6 +1,6 @@
 @echo off
 echo ===================================================
-echo     Starting AEO Diagnostic (Full Stack)
+echo     Starting AEO Diagnostic
 echo ===================================================
 
 echo [*] Checking Backend Dependencies...

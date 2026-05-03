@@ -1,16 +1,44 @@
-# React + Vite
+# AEO Diagnostic Frontend 🎨
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+The high-fidelity, monochromatic dashboard for tracking AI Search visibility.
 
-Currently, two official plugins are available:
+## Tech Stack
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+- **React + Vite** — Ultra-fast development and HMR
+- **Framer Motion** — Fluid layout transitions and entry animations
+- **Lucide React** — Premium iconography
+- **Recharts** — Data visualization for brand scores
+- **CSS3** — Custom glassmorphism and grid-background design system
 
-## React Compiler
+## Key Features
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+- **Real-time AI Panels:** Character-by-character streaming of responses from ChatGPT, Claude, and Gemini.
+- **Dynamic Leaderboard:** Real-time ranking of brands with SVG progress bars and RAG status indicators.
+- **Competitive Gap Analysis:** Structured breakdown of actionable insights to improve visibility.
+- **Local Search History:** Persistent storage of past queries for one-click re-runs.
+- **Export Capabilities:** Downloadable CSV of leaderboard data and high-quality PDF reports.
 
-## Expanding the ESLint configuration
+## Getting Started
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+1. **Install Dependencies:**
+   ```bash
+   npm install
+   ```
+
+2. **Run Development Server:**
+   ```bash
+   npm run dev
+   ```
+
+3. **Production Build:**
+   ```bash
+   npm run build
+   ```
+
+## Design System
+
+The UI is inspired by **21st.dev** and **Vercel** aesthetics:
+- **Primary Color:** Pure White (`#FFFFFF`)
+- **Background:** Obsidian Black (`#000000`)
+- **Accents:** Electric Sparkles and Metallic Gradients
+- **Typography:** Inter (Sans) and Geist Mono (Data)
