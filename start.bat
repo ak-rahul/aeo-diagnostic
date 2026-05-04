@@ -1,6 +1,6 @@
 @echo off
 echo =========================================
-echo  AEO Diagnostic — Local Startup
+echo  AEO Diagnostic
 echo =========================================
 
 REM ── Backend ───────────────────────────────

@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Target, TrendingUp } from 'lucide-react';
+import { Target } from 'lucide-react';
+import { ENGINE_CONFIG } from '../constants';
 
 const ENGINES = [
-  { id: 'GPT-4o', label: 'GPT-4o', color: '#10B981' },
-  { id: 'Claude Sonnet', label: 'Claude', color: '#F59E0B' },
-  { id: 'Gemini 1.5 Pro', label: 'Gemini', color: '#3B82F6' }
+  { id: 'GPT-4o', label: ENGINE_CONFIG['GPT-4o'].label, color: ENGINE_CONFIG['GPT-4o'].color },
+  { id: 'Claude Sonnet', label: ENGINE_CONFIG['Claude Sonnet'].label, color: ENGINE_CONFIG['Claude Sonnet'].color },
+  { id: 'Gemini 1.5 Pro', label: ENGINE_CONFIG['Gemini 1.5 Pro'].label, color: ENGINE_CONFIG['Gemini 1.5 Pro'].color }
 ];
 
 function AnimatedNumber({ value }) {
@@ -59,14 +60,14 @@ export default function ScoreCard({ leaderboard, userBrand }) {
       <div style={{ padding: 24, borderTop: '1px solid var(--border-subtle)', background: 'rgba(0,0,0,0.4)' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
           <span style={{ fontSize: 12, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 1 }}>Engine Breakdown</span>
-          <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Max 47/engine</span>
+          <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Score capped at 100</span>
         </div>
         
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           {ENGINES.map(eng => {
             const data = me.breakdown?.[eng.id];
             const score = data?.score || 0;
-            const pct = (score / 47) * 100;
+            const pct = (score / 47) * 100; // 47 is the internal per-engine cap
             
             return (
               <div key={eng.id}>
@@ -80,7 +81,7 @@ export default function ScoreCard({ leaderboard, userBrand }) {
                 <div style={{ height: 6, background: 'rgba(255,255,255,0.05)', borderRadius: 99, overflow: 'hidden' }}>
                   <motion.div 
                     initial={{ width: 0 }}
-                    animate={{ width: `${pct}%` }}
+                    animate={{ width: `${Math.min(pct, 100)}%` }}
                     transition={{ duration: 1, delay: 0.5, ease: 'easeOut' }}
                     style={{ height: '100%', background: eng.color, borderRadius: 99, boxShadow: `0 0 10px ${eng.color}` }}
                   />

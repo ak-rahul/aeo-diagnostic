@@ -2,7 +2,7 @@
 set -e
 
 echo "========================================="
-echo " AEO Diagnostic — Linux/Render Startup"
+echo " AEO Diagnostic"
 echo "========================================="
 
 # Build Frontend

@@ -53,6 +53,16 @@ class EngineScore:
     details: list[str] = field(default_factory=list)
 
 
+@dataclass
+class BrandScore:
+    brand: str
+    total_score: int
+    rag_status: str
+    ais_mentioned_in: int
+    rank: int = 0
+    breakdown: dict[str, dict] = field(default_factory=dict)
+
+
 def _normalise(text: str) -> str:
     """Remove punctuation and normalise whitespace for robust matching."""
     text = text.lower()
