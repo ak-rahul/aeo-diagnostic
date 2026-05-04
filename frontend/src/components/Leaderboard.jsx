@@ -35,7 +35,7 @@ export default function Leaderboard({ leaderboard, userBrand, isLoading }) {
       item.total_score,
       item.breakdown?.['GPT-4o']?.score || 0,
       item.breakdown?.['Claude Sonnet']?.score || 0,
-      item.breakdown?.['Gemini 1.5 Pro']?.score || 0,
+      item.breakdown?.['Gemini Pro Latest']?.score || 0,
       item.rag_status
     ]);
     

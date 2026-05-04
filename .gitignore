@@ -1,8 +1,14 @@
+# Root level ignores
 .env
-__pycache__/
-*.pyc
-*.pyo
-.pytest_cache/
-node_modules/
-dist/
-.vite/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDEs
+.vscode/
+.idea/
+
+# Defer to subdirectories for specific ignores
+# see frontend/.gitignore
+# see backend/.gitignore

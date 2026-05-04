@@ -39,7 +39,7 @@ _TIMEOUT_S = 30  # per-engine hard timeout
 # Model identifiers — overridable via env vars for easy future updates
 _MODEL_GPT    = os.getenv("MODEL_GPT",    "openai/gpt-4o")
 _MODEL_CLAUDE = os.getenv("MODEL_CLAUDE", "anthropic/claude-sonnet-4-5")
-_MODEL_GEMINI = os.getenv("MODEL_GEMINI", "google/gemini-pro-1.5")
+_MODEL_GEMINI = os.getenv("MODEL_GEMINI", "google/gemini-pro-latest")
 
 _OPENROUTER_BASE = "https://openrouter.ai/api/v1"
 
@@ -146,7 +146,7 @@ async def call_claude(query: str) -> dict[str, Any]:
 
 
 async def call_gemini(query: str) -> dict[str, Any]:
-    return await _call_engine(_MODEL_GEMINI, "Gemini 1.5 Pro", query)
+    return await _call_engine(_MODEL_GEMINI, "Gemini Pro Latest", query)
 
 
 # ── Parallel orchestrator ──────────────────────────────────────────────────────

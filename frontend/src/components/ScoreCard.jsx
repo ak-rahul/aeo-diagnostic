@@ -6,7 +6,7 @@ import { ENGINE_CONFIG } from '../constants';
 const ENGINES = [
   { id: 'GPT-4o', label: ENGINE_CONFIG['GPT-4o'].label, color: ENGINE_CONFIG['GPT-4o'].color },
   { id: 'Claude Sonnet', label: ENGINE_CONFIG['Claude Sonnet'].label, color: ENGINE_CONFIG['Claude Sonnet'].color },
-  { id: 'Gemini 1.5 Pro', label: ENGINE_CONFIG['Gemini 1.5 Pro'].label, color: ENGINE_CONFIG['Gemini 1.5 Pro'].color }
+  { id: 'Gemini Pro Latest', label: ENGINE_CONFIG['Gemini Pro Latest'].label, color: ENGINE_CONFIG['Gemini Pro Latest'].color }
 ];
 
 function AnimatedNumber({ value }) {
