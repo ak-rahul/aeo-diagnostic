@@ -14,3 +14,5 @@ cachetools==5.3.3
 structlog==24.2.0
 # Rate limiting
 slowapi==0.1.9
+# Fuzzy matching for robust brand scoring
+rapidfuzz==3.9.0
