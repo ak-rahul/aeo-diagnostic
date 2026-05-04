@@ -1,34 +1,55 @@
 import { useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
+import { ENGINE_CONFIG } from '../constants';
 
+// Use centralized engine config from constants.js — fixes label inconsistency
 const ENGINES = [
-  { id: 'GPT-4o', label: 'GPT-4o', orbClass: 'gpt' },
-  { id: 'Claude Sonnet', label: 'Claude 3.5', orbClass: 'claude' },
-  { id: 'Gemini 1.5 Pro', label: 'Gemini Pro', orbClass: 'gemini' }
+  { id: 'GPT-4o',          label: ENGINE_CONFIG['GPT-4o'].label,          orbClass: ENGINE_CONFIG['GPT-4o'].dotClass },
+  { id: 'Claude Sonnet',   label: ENGINE_CONFIG['Claude Sonnet'].label,   orbClass: ENGINE_CONFIG['Claude Sonnet'].dotClass },
+  { id: 'Gemini 1.5 Pro',  label: ENGINE_CONFIG['Gemini 1.5 Pro'].label,  orbClass: ENGINE_CONFIG['Gemini 1.5 Pro'].dotClass },
 ];
 
 function StreamText({ text }) {
   const ref = useRef(null);
+  const ivRef = useRef(null);   // store interval in ref so cleanup always works
   const done = useRef(false);
 
   useEffect(() => {
-    if (!ref.current || !text || done.current) return;
-    done.current = true;
+    // Reset done flag when text changes so new text re-triggers animation
+    done.current = false;
+
+    if (!ref.current || !text) return;
+
+    // Clear any previous interval
+    if (ivRef.current) clearInterval(ivRef.current);
+
     const words = text.split(' ');
     let i = 0;
     ref.current.textContent = '';
-    const iv = setInterval(() => {
+
+    ivRef.current = setInterval(() => {
       if (!ref.current || i >= words.length) {
-        clearInterval(iv);
+        clearInterval(ivRef.current);
+        done.current = true;
         if (ref.current) {
-          ref.current.innerHTML = text.replace(/\*\*(.*?)\*\*/g, '<strong style="color: #FFF">$1</strong>');
+          // Sanitize: only allow <strong> tags, no arbitrary HTML
+          const safe = text
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/\*\*(.*?)\*\*/g, '<strong style="color: #FFF">$1</strong>');
+          ref.current.innerHTML = safe;
         }
         return;
       }
       ref.current.textContent = words.slice(0, i + 1).join(' ') + ' ▋';
       i += Math.floor(Math.random() * 5) + 1;
     }, 40);
-    return () => clearInterval(iv);
+
+    // Cleanup always clears the interval, regardless of done.current
+    return () => {
+      if (ivRef.current) clearInterval(ivRef.current);
+    };
   }, [text]);
 
   return <div ref={ref} style={{ whiteSpace: 'pre-wrap' }} />;
@@ -51,7 +72,7 @@ export default function AIPanels({ responses, isLoading }) {
             className="glass-card"
             style={{ 
               display: 'flex', flexDirection: 'column', overflow: 'hidden',
-              borderColor: (isLoading && !isReady) ? 'rgba(255,255,255,0.2)' : isReady ? 'var(--border-subtle)' : 'var(--border-subtle)'
+              borderColor: (isLoading && !isReady) ? 'rgba(255,255,255,0.2)' : 'var(--border-subtle)'
             }}
           >
             <div style={{ 

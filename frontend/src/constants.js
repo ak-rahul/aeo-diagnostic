@@ -1,19 +1,18 @@
-// constants.js — shared config and demo data
+// constants.js — single source of truth for config and demo data
 
-export const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+// Single API_BASE definition — App.jsx imports from here, not redefines it
+export const API_BASE = import.meta.env.VITE_API_URL || '';
 
 export const DEMO_QUERIES = [
   { query: 'best magnesium supplement for seniors', category: 'Supplements' },
-  { query: 'best collagen powder for women over 40', category: 'Beauty/Health' },
-  { query: 'best air fryer under $100', category: 'Kitchen' },
-  { query: 'best dog food for small breeds', category: 'Pet' },
-  { query: 'best creatine for beginners', category: 'Fitness' },
 ];
 
+// ENGINE_CONFIG — canonical labels used by AIPanels, ScoreCard, and Leaderboard.
+// Keys match the engine names returned by the backend exactly.
 export const ENGINE_CONFIG = {
-  'GPT-4o':        { dotClass: 'gpt',    color: '#10b981', label: 'GPT-4o' },
-  'Claude Sonnet': { dotClass: 'claude', color: '#f97316', label: 'Claude' },
-  'Gemini 1.5 Pro':{ dotClass: 'gemini', color: '#3b82f6', label: 'Gemini' },
+  'GPT-4o':         { dotClass: 'gpt',    color: '#10b981', label: 'GPT-4o' },
+  'Claude Sonnet':  { dotClass: 'claude', color: '#f97316', label: 'Claude Sonnet' },
+  'Gemini 1.5 Pro': { dotClass: 'gemini', color: '#3b82f6', label: 'Gemini 1.5 Pro' },
 };
 
 export const RAG_CONFIG = {
@@ -22,10 +21,11 @@ export const RAG_CONFIG = {
   red:   { label: 'Not Visible',        emoji: '🔴' },
 };
 
-// Simulated streaming demo data for offline/demo mode
+// Simulated data for opt-in demo mode
 export const DEMO_RESULT = {
   query: 'best magnesium supplement for seniors',
   user_brand: '',
+  from_cache: false,
   responses: [
     {
       engine: 'GPT-4o',
@@ -60,8 +60,9 @@ export const DEMO_RESULT = {
       { gap:'No senior-specific benefit claims — competitors explicitly target seniors with bone density, sleep, and heart health messaging', action:'Add 3 senior-focused bullets: bone density support, improved sleep quality, cardiovascular health.', priority:'medium', impact:'Query-to-listing alignment is the core signal AI uses to recommend products.' },
       { gap:'No USP or certification badge — Nature Made USP verification is a key trust signal cited by AI engines', action:'Obtain and prominently display USP, NSF, or Informed Sport certification.', priority:'medium', impact:'Certifications are machine-readable trust signals that AI engines cite directly.' },
     ],
-    overall_verdict: 'Your brand is invisible to AI shoppers — while Pure Encapsulations appears in all 3 engines at position #1, your product is not mentioned at all, representing a complete gap in the fastest-growing sales channel.',
+    overall_verdict: 'Your brand is invisible to AI shoppers — while Pure Encapsulations appears in all 3 engines at position #1, your product is not mentioned at all.',
     quick_win: 'Add "third-party tested magnesium glycinate for seniors — physician formulated" to your product title today.',
+    estimated_score_if_fixed: 72,
   },
   duration_seconds: 18.4,
 };

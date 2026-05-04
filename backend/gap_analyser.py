@@ -1,5 +1,8 @@
 """
-gap_analyser.py — Claude-powered competitive gap analysis with retry.
+gap_analyser.py — OpenRouter-powered competitive gap analysis with retry.
+
+Uses OpenRouter (Claude) to generate AEO gap analysis.
+Falls back to a generic, category-agnostic template on any API failure.
 """
 
 import json
@@ -50,55 +53,95 @@ Return ONLY valid JSON — no markdown, no preamble:
 }}
 """
 
+# Generic fallback — does NOT mention supplements so it works for any category
 _FALLBACK = {
     "gaps": [
         {
-            "gap": "Missing clinical credibility signals",
-            "action": "Add 'third-party tested by NSF International' and 'recommended by licensed physicians' to your listing headline.",
+            "gap": "Missing credibility signals",
+            "action": "Add third-party certifications, awards, or expert endorsements to your listing headline.",
             "priority": "high",
-            "impact": "AI engines weight trust signals heavily when recommending health products.",
+            "impact": "AI engines weight trust signals heavily when recommending products.",
         },
         {
-            "gap": "No specific active ingredient form stated",
-            "action": "Lead with the specific compound form (e.g. 'Magnesium Glycinate — most bioavailable form for seniors') in the product title.",
+            "gap": "No specific differentiator stated",
+            "action": "Lead with the single most important product attribute that makes you different (e.g. formulation, origin, method) in the product title.",
             "priority": "high",
             "impact": "Query specificity is the #1 driver of AI top-of-list placement.",
         },
         {
             "gap": "Absent target-audience benefit claims",
-            "action": "Add 3 audience-specific bullet points (e.g. 'Supports bone density in adults 50+', 'Promotes deep sleep', 'Gentle on sensitive stomachs').",
+            "action": "Add 3 audience-specific bullet points that directly address the shopper's query intent.",
             "priority": "medium",
             "impact": "Query-to-listing alignment is the core ranking signal AI engines use.",
         },
         {
-            "gap": "No certifications or verification marks",
-            "action": "Obtain USP, NSF, or Informed Sport certification and display it prominently in the listing.",
+            "gap": "No verification or quality marks",
+            "action": "Obtain relevant third-party verification for your category and display it prominently in the listing.",
             "priority": "medium",
-            "impact": "Certifications are machine-readable trust tokens that AI engines cite directly.",
+            "impact": "Verification marks are machine-readable trust tokens that AI engines cite directly.",
         },
     ],
-    "overall_verdict": "Your brand has minimal AI search presence — run the live diagnostic with API keys for personalised analysis.",
-    "quick_win": "Add specific benefit claims and a third-party certification to your product title today.",
+    "overall_verdict": "Your brand has minimal AI search presence — run the live diagnostic with your API key for personalised analysis.",
+    "quick_win": "Add specific benefit claims and a third-party quality signal to your product title today.",
     "estimated_score_if_fixed": 70,
 }
 
+_GAP_MODEL = os.getenv("MODEL_GAP", "anthropic/claude-sonnet-4-5")
+_OPENROUTER_BASE = "https://openrouter.ai/api/v1"
 
-@retry(
-    retry=retry_if_exception_type(Exception),
-    stop=stop_after_attempt(2),
-    wait=wait_exponential(multiplier=1, min=2, max=6),
-    reraise=False,
-)
-async def _call_claude_gap(prompt: str) -> dict:
-    import anthropic
-    client = anthropic.AsyncAnthropic(api_key=os.getenv("ANTHROPIC_API_KEY"), timeout=25)
-    msg = await client.messages.create(
-        model="claude-sonnet-4-5",
-        max_tokens=1200,
-        messages=[{"role": "user", "content": prompt}],
+
+def _get_client():
+    """Singleton-style OpenRouter client for gap analysis."""
+    import openai
+    api_key = os.getenv("OPENROUTER_API_KEY")
+    if not api_key:
+        raise RuntimeError("OPENROUTER_API_KEY not set")
+    return openai.AsyncOpenAI(
+        api_key=api_key,
+        base_url=_OPENROUTER_BASE,
+        default_headers={
+            "HTTP-Referer": os.getenv("SITE_URL", "http://localhost:5173"),
+            "X-Title": os.getenv("SITE_NAME", "AEO Diagnostic"),
+        },
+        timeout=25,
     )
-    raw = msg.content[0].text.strip() if msg.content else "{}"
+
+
+def _transient_retry():
+    import openai, httpx
+    transient = (
+        openai.RateLimitError,
+        openai.APIConnectionError,
+        openai.APITimeoutError,
+        httpx.ConnectError,
+        httpx.TimeoutException,
+        ConnectionError,
+        TimeoutError,
+    )
+    return retry(
+        retry=retry_if_exception_type(transient),
+        stop=stop_after_attempt(2),
+        wait=wait_exponential(multiplier=1, min=2, max=6),
+        reraise=True,
+    )
+
+
+async def _call_gap_api(prompt: str) -> dict:
+    """Call OpenRouter for gap analysis. Network retried; JSON errors are not."""
+    client = _get_client()
+
+    @_transient_retry()
+    async def _fetch() -> str:
+        resp = await client.chat.completions.create(
+            model=_GAP_MODEL,
+            max_tokens=1200,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        return resp.choices[0].message.content or "{}"
+
+    raw = await _fetch()
     raw = re.sub(r"```(?:json)?|```", "", raw).strip()
+    # JSON parse errors fall through to caller, not retried
     return json.loads(raw)
 
 
@@ -110,7 +153,7 @@ async def analyse_gaps(
 ) -> dict:
     """
     Generate AEO gap analysis for user_brand vs. leaderboard top-rankers.
-    Falls back to a generic template if Claude is unavailable.
+    Falls back to a generic template if OpenRouter is unavailable.
     """
     user_brand = user_brand.strip()
     user_entry = next(
@@ -145,12 +188,12 @@ async def analyse_gaps(
         listing_section=listing_section,
     )
 
-    if not os.getenv("ANTHROPIC_API_KEY"):
+    if not os.getenv("OPENROUTER_API_KEY"):
         log.warning("gap_analysis_no_key")
         return _FALLBACK
 
     try:
-        result = await _call_claude_gap(prompt)
+        result = await _call_gap_api(prompt)
         # Ensure required fields exist
         result.setdefault("gaps", [])
         result.setdefault("overall_verdict", "Analysis complete.")
@@ -158,6 +201,9 @@ async def analyse_gaps(
         result.setdefault("estimated_score_if_fixed", None)
         log.info("gap_analysis_done", gaps=len(result["gaps"]))
         return result
+    except (json.JSONDecodeError, ValueError) as e:
+        log.error("gap_analysis_parse_failed", err=str(e))
+        return _FALLBACK
     except Exception as e:
         log.error("gap_analysis_failed", err=str(e))
         return _FALLBACK

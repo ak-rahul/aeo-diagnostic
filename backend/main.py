@@ -1,18 +1,19 @@
 """
 main.py — FastAPI application: AEO Diagnostic
-Improvements over v1:
-  - TTLCache for repeat queries (5-min TTL)
-  - Structured logging via structlog
-  - Strict Pydantic input validation
-  - /api/health reports API key presence without leaking values
-  - Startup event validates environment
-  - Clean error response model
+Fixes applied:
+  - CORS: wildcard removed, explicit origin from env var
+  - Startup: migrated to lifespan (replaces deprecated @app.on_event)
+  - PDF endpoint: strict Pydantic model, no raw dict
+  - _last_result race: replaced with per-request UUID store
+  - Health: reports OpenRouter key presence
+  - Rate limiting: per-IP via slowapi
 """
 
 import asyncio
 import hashlib
 import os
 import uuid
+from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import Optional
 
@@ -22,6 +23,9 @@ from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
 
 from ai_caller import call_all_engines
 from brand_extractor import extract_brands_parallel
@@ -33,26 +37,61 @@ from scorer import build_leaderboard
 
 load_dotenv()
 
+# ── Rate limiter ───────────────────────────────────────────────────────────────
+limiter = Limiter(key_func=get_remote_address)
+
+# ── In-memory cache (max 100 results, 5-minute TTL) ───────────────────────────
+_cache: TTLCache = TTLCache(maxsize=100, ttl=300)
+
+# Per-request result store (keyed by result UUID) — fixes _last_result race condition
+_result_store: dict[str, dict] = {}
+_MAX_STORED = 50  # prevent unbounded growth
+
+
+# ── Lifespan (replaces deprecated @app.on_event) ──────────────────────────────
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    keys = {
+        "OPENROUTER_API_KEY": bool(os.getenv("OPENROUTER_API_KEY")),
+    }
+    log.info("startup", **keys, version="1.2.0")
+    missing = [k for k, v in keys.items() if not v]
+    if missing:
+        log.warning("missing_api_keys", keys=missing)
+    yield
+    log.info("shutdown")
+
+
 # ── App ────────────────────────────────────────────────────────────────────────
 app = FastAPI(
     title="AEO Diagnostic API",
     description="Real-time AI visibility & Answer Engine Optimisation for e-commerce brands.",
-    version="1.1.0",
+    version="1.2.0",
     docs_url="/api/docs",
     redoc_url="/api/redoc",
+    lifespan=lifespan,
 )
+
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+# ── CORS — explicit origin, no wildcard + credentials ─────────────────────────
+_ALLOWED_ORIGINS = [
+    o.strip()
+    for o in os.getenv(
+        "ALLOWED_ORIGINS",
+        "http://localhost:5173,http://localhost:3000",
+    ).split(",")
+    if o.strip()
+]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=_ALLOWED_ORIGINS,
+    allow_credentials=False,   # no cookies used
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization"],
 )
-
-# ── In-memory cache (max 100 results, 5-minute TTL) ───────────────────────────
-_cache: TTLCache = TTLCache(maxsize=100, ttl=300)
-_last_result: dict = {}  # used for PDF export
 
 
 # ── Models ─────────────────────────────────────────────────────────────────────
@@ -71,6 +110,19 @@ class DiagnosticRequest(BaseModel):
     @classmethod
     def strip_brand(cls, v: Optional[str]) -> str:
         return (v or "").strip()
+
+
+class PdfExportRequest(BaseModel):
+    """Strict model for PDF export payload — prevents injection via raw dict."""
+    id: Optional[str] = Field(default=None, max_length=64)
+    query: str = Field(..., max_length=300)
+    user_brand: Optional[str] = Field(default="", max_length=120)
+    responses: list[dict] = Field(default_factory=list, max_length=10)
+    leaderboard: list[dict] = Field(default_factory=list, max_length=100)
+    gap_analysis: Optional[dict] = None
+    duration_seconds: Optional[float] = None
+    generated_at: Optional[str] = None
+    from_cache: Optional[bool] = False
 
 
 class ErrorResponse(BaseModel):
@@ -105,18 +157,15 @@ def _build_result(
     }
 
 
-# ── Startup ────────────────────────────────────────────────────────────────────
-@app.on_event("startup")
-async def startup() -> None:
-    keys = {
-        "OPENAI_API_KEY": bool(os.getenv("OPENAI_API_KEY")),
-        "ANTHROPIC_API_KEY": bool(os.getenv("ANTHROPIC_API_KEY")),
-        "GOOGLE_API_KEY": bool(os.getenv("GOOGLE_API_KEY")),
-    }
-    log.info("startup", **keys, version="1.1.0")
-    missing = [k for k, v in keys.items() if not v]
-    if missing:
-        log.warning("missing_api_keys", keys=missing)
+def _store_result(result: dict) -> None:
+    """Store result keyed by its UUID, evict oldest if over limit."""
+    rid = result.get("id")
+    if not rid:
+        return
+    if len(_result_store) >= _MAX_STORED:
+        oldest = next(iter(_result_store))
+        del _result_store[oldest]
+    _result_store[rid] = result
 
 
 # ── Health ─────────────────────────────────────────────────────────────────────
@@ -124,13 +173,12 @@ async def startup() -> None:
 async def health():
     return {
         "status": "ok",
-        "version": "1.1.0",
+        "version": "1.2.0",
         "apis": {
-            "openai":    bool(os.getenv("OPENAI_API_KEY")),
-            "anthropic": bool(os.getenv("ANTHROPIC_API_KEY")),
-            "google":    bool(os.getenv("GOOGLE_API_KEY")),
+            "openrouter": bool(os.getenv("OPENROUTER_API_KEY")),
         },
         "cache_size": len(_cache),
+        "allowed_origins": _ALLOWED_ORIGINS,
     }
 
 
@@ -141,8 +189,8 @@ async def demo_queries():
 
 # ── Diagnostic ─────────────────────────────────────────────────────────────────
 @app.post("/api/diagnostic", tags=["Diagnostic"])
+@limiter.limit("10/minute")
 async def run_diagnostic(req: DiagnosticRequest, request: Request):
-    global _last_result
     query = req.query
     user_brand = req.user_brand or ""
     log.info("diagnostic_start", query=query[:80], brand=user_brand or "(none)")
@@ -155,7 +203,7 @@ async def run_diagnostic(req: DiagnosticRequest, request: Request):
             cached.update(id=str(uuid.uuid4()), generated_at=datetime.utcnow().isoformat() + "Z", from_cache=True)
             if user_brand:
                 cached["user_brand"] = user_brand
-            _last_result = cached
+            _store_result(cached)
             log.info("diagnostic_demo", query=query[:60])
             return cached
 
@@ -181,7 +229,7 @@ async def run_diagnostic(req: DiagnosticRequest, request: Request):
     if not successful:
         raise HTTPException(
             status_code=503,
-            detail="All AI engines failed to respond. Check your API keys and try again.",
+            detail="All AI engines failed to respond. Check your OPENROUTER_API_KEY and try again.",
         )
 
     # ── Step 2: Parallel brand extraction ─────────────────────────────────────
@@ -204,25 +252,25 @@ async def run_diagnostic(req: DiagnosticRequest, request: Request):
     result = _build_result(query, user_brand, responses, leaderboard, gap_analysis, duration)
     log.info("diagnostic_done", duration_s=duration, brands=len(leaderboard))
 
-    # Cache and store
     _cache[ck] = result
-    _last_result = result
+    _store_result(result)
     return result
 
 
 # ── PDF Export ─────────────────────────────────────────────────────────────────
-@app.get("/api/export/pdf", tags=["Export"])
-async def export_pdf_last():
-    if not _last_result:
-        raise HTTPException(status_code=404, detail="No diagnostic run yet. Run a diagnostic first.")
-    return await _generate_pdf_response(_last_result)
+@app.get("/api/export/pdf/{result_id}", tags=["Export"])
+async def export_pdf_by_id(result_id: str):
+    """Fetch a previously stored result by UUID and export as PDF."""
+    result = _result_store.get(result_id)
+    if not result:
+        raise HTTPException(status_code=404, detail="Result not found or expired. Run a diagnostic first.")
+    return await _generate_pdf_response(result)
 
 
 @app.post("/api/export/pdf-from-result", tags=["Export"])
-async def export_pdf_from_result(result: dict):
-    if not result:
-        raise HTTPException(status_code=400, detail="Empty result payload.")
-    return await _generate_pdf_response(result)
+async def export_pdf_from_result(payload: PdfExportRequest):
+    """Export PDF from a strictly-validated payload (no raw dict injection)."""
+    return await _generate_pdf_response(payload.model_dump())
 
 
 async def _generate_pdf_response(result: dict) -> Response:

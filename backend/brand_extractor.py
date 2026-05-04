@@ -1,11 +1,12 @@
 """
-brand_extractor.py — Claude-powered NER with retry, validation, and fallback.
+brand_extractor.py — OpenRouter-powered NER with retry, validation, and fallback.
 
 Pipeline:
-  1. Ask Claude Sonnet to extract brand names as a JSON array
+  1. Ask Claude (via OpenRouter) to extract brand names as a JSON array
   2. Validate and clean the response
-  3. On any failure → regex fallback extractor
-  4. Deduplicate and normalise casing
+  3. On network/rate-limit failure → retry (tenacity)
+  4. On JSON parse failure → immediate regex fallback (no useless retry)
+  5. Deduplicate and normalise casing
 """
 
 import asyncio
@@ -38,22 +39,44 @@ Return ONLY a valid JSON array of strings. No markdown. No explanation. Example:
 ["Brand A", "Brand B", "Product X"]
 """
 
+# Model for extraction — lighter model is fine here, saves cost
+_EXTRACT_MODEL = os.getenv("MODEL_EXTRACT", "anthropic/claude-haiku-4-5")
+_OPENROUTER_BASE = "https://openrouter.ai/api/v1"
 
-def _validate_and_clean(raw: str, source_text: str) -> list[str]:
-    """Parse Claude's JSON response and remove obvious non-brands."""
+
+def _get_client():
+    """Singleton-style OpenRouter client for brand extraction."""
+    import openai
+    api_key = os.getenv("OPENROUTER_API_KEY")
+    if not api_key:
+        raise RuntimeError("OPENROUTER_API_KEY not set")
+    return openai.AsyncOpenAI(
+        api_key=api_key,
+        base_url=_OPENROUTER_BASE,
+        default_headers={
+            "HTTP-Referer": os.getenv("SITE_URL", "http://localhost:5173"),
+            "X-Title": os.getenv("SITE_NAME", "AEO Diagnostic"),
+        },
+        timeout=20,
+    )
+
+
+def _validate_and_clean(raw: str) -> list[str]:
+    """Parse JSON response and remove obvious non-brands. Raises on parse failure."""
     raw = re.sub(r"```(?:json)?|```", "", raw).strip()
+    # Try direct parse first
     try:
         parsed = json.loads(raw)
     except json.JSONDecodeError:
-        # Try to extract array substring
+        # Try to extract array substring before giving up
         m = re.search(r"\[.*?\]", raw, re.DOTALL)
         if m:
             parsed = json.loads(m.group())
         else:
-            raise ValueError("No JSON array found")
+            raise ValueError("No JSON array found in response")
 
     if not isinstance(parsed, list):
-        raise ValueError("Response is not a list")
+        raise ValueError("Response is not a JSON list")
 
     _NOISE = {
         "amazon", "google", "ai", "the", "a", "an", "and", "or",
@@ -76,26 +99,46 @@ def _validate_and_clean(raw: str, source_text: str) -> list[str]:
     return result[:40]  # cap at 40 brands per response
 
 
-@retry(
-    retry=retry_if_exception_type(Exception),
-    stop=stop_after_attempt(2),
-    wait=wait_exponential(multiplier=1, min=1, max=4),
-    reraise=False,
-)
-async def _extract_via_claude(text: str) -> list[str]:
-    import anthropic
-    client = anthropic.AsyncAnthropic(api_key=os.getenv("ANTHROPIC_API_KEY"), timeout=20)
-    msg = await client.messages.create(
-        model="claude-sonnet-4-5",
-        max_tokens=512,
-        messages=[{"role": "user", "content": _EXTRACTION_PROMPT.format(text=text[:3000])}],
+# ── Retry only on transient network/rate-limit errors ─────────────────────────
+def _transient_retry():
+    import openai, httpx
+    transient = (
+        openai.RateLimitError,
+        openai.APIConnectionError,
+        openai.APITimeoutError,
+        httpx.ConnectError,
+        httpx.TimeoutException,
+        ConnectionError,
+        TimeoutError,
     )
-    raw = msg.content[0].text if msg.content else "[]"
-    return _validate_and_clean(raw, text)
+    return retry(
+        retry=retry_if_exception_type(transient),
+        stop=stop_after_attempt(2),
+        wait=wait_exponential(multiplier=1, min=1, max=4),
+        reraise=True,
+    )
+
+
+async def _extract_via_openrouter(text: str) -> list[str]:
+    """Call OpenRouter to extract brands. Separates network errors from parse errors."""
+    client = _get_client()
+
+    @_transient_retry()
+    async def _fetch() -> str:
+        resp = await client.chat.completions.create(
+            model=_EXTRACT_MODEL,
+            max_tokens=512,
+            messages=[{"role": "user", "content": _EXTRACTION_PROMPT.format(text=text[:3000])}],
+        )
+        return resp.choices[0].message.content or "[]"
+
+    raw = await _fetch()
+    # JSON parse failure is NOT retried — Claude will return the same output again
+    return _validate_and_clean(raw)
 
 
 def _regex_fallback(text: str) -> list[str]:
-    """Lightweight regex heuristic for brand extraction when Claude is unavailable."""
+    """Lightweight regex heuristic for brand extraction when AI is unavailable."""
     pattern = r"\*{0,2}([A-Z][a-zA-Z']+(?:\s[A-Z][a-zA-Z']+){0,3})\*{0,2}"
     candidates = re.findall(pattern, text)
     _STOP = {
@@ -119,19 +162,23 @@ def _regex_fallback(text: str) -> list[str]:
 async def extract_brands(ai_response: str) -> list[str]:
     """
     Extract brand names from an AI response text.
-    Tries Claude first; falls back to regex on any error.
+    Tries OpenRouter first; falls back to regex on any error.
     """
     if not ai_response or not ai_response.strip():
         return []
 
-    if not os.getenv("ANTHROPIC_API_KEY"):
+    if not os.getenv("OPENROUTER_API_KEY"):
         log.warning("extract_brands_no_key", method="regex")
         return _regex_fallback(ai_response)
 
     try:
-        brands = await _extract_via_claude(ai_response)
-        log.info("extract_brands_done", method="claude", count=len(brands))
+        brands = await _extract_via_openrouter(ai_response)
+        log.info("extract_brands_done", method="openrouter", count=len(brands))
         return brands
+    except (ValueError, json.JSONDecodeError) as e:
+        # JSON parse error — don't retry, go straight to fallback
+        log.warning("extract_brands_parse_error", err=str(e), method="regex")
+        return _regex_fallback(ai_response)
     except Exception as e:
         log.warning("extract_brands_fallback", err=str(e), method="regex")
         return _regex_fallback(ai_response)

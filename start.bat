@@ -1,21 +1,27 @@
 @echo off
-echo ===================================================
-echo     Starting AEO Diagnostic
-echo ===================================================
+echo =========================================
+echo  AEO Diagnostic — Local Startup
+echo =========================================
 
-echo [*] Checking Backend Dependencies...
-cd backend
-pip install -r requirements.txt -q
-cd ..
+REM ── Backend ───────────────────────────────
+echo [1/3] Installing backend dependencies...
+cd /d %~dp0backend
+pip install -r requirements.txt --quiet
 
-echo [*] Checking Frontend Dependencies...
-cd frontend
+echo [2/3] Starting FastAPI backend on :8000...
+start "AEO Backend" cmd /k "uvicorn main:app --reload --port 8000"
+
+REM ── Frontend ──────────────────────────────
+echo [3/3] Installing and starting frontend...
+cd /d %~dp0frontend
 call npm install --silent
-cd ..
+start "AEO Frontend" cmd /k "npm run dev"
 
-echo [*] Starting FastAPI Backend on port 8000...
-start cmd /k "title AEO Backend && cd backend && uvicorn main:app --reload --port 8000"
-
-echo [*] Starting Vite Frontend on port 5173...
-cd frontend
-npm run dev
+echo.
+echo =========================================
+echo  Backend:  http://localhost:8000/api/docs
+echo  Frontend: http://localhost:5173
+echo =========================================
+echo  Add your OPENROUTER_API_KEY to .env
+echo  Get a free key: https://openrouter.ai/keys
+echo =========================================

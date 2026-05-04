@@ -15,6 +15,11 @@ RAG thresholds:
   green  ≥ 70
   amber  ≥ 35
   red    < 35
+
+Scoring note:
+  Raw score across 3 engines can reach 141; this is normalised by capping
+  at 100 (global cap). The displayed per-engine max of 47 is the per-engine
+  cap — a brand perfect across all 3 would score 141 raw, shown as 100.
 """
 
 from __future__ import annotations
@@ -25,12 +30,14 @@ from typing import Optional
 
 from logger import log
 
-# ── Sentiment keywords ────────────────────────────────────────────────────────
+# ── Sentiment keywords — specific enough to be meaningful ─────────────────────
+# Removed "best"/"top" because they appear universally in AI product responses
+# and don't discriminate. Only words that reflect direct positive attribution.
 _POSITIVE = frozenset({
-    "best", "top", "excellent", "highly", "recommend", "great", "superior",
-    "premium", "leading", "popular", "trusted", "renowned", "award",
-    "effective", "quality", "proven", "favorite", "outstanding", "choice",
-    "exceptional", "remarkable", "ideal", "perfect", "impressive",
+    "excellent", "highly recommended", "superior",
+    "premium", "leading", "trusted", "renowned",
+    "effective", "proven", "outstanding", "exceptional",
+    "remarkable", "impressive", "standout",
 })
 
 _CONCLUSION_MARKERS = frozenset({
@@ -102,12 +109,13 @@ def _score_engine(brand_lower: str, text: str) -> EngineScore:
         es.score += 3
         es.details.append("✓ Positive context +3")
 
-    # Conclusion mention (last 300 chars)
+    # Conclusion mention — ONLY award bonus if the brand itself is in the tail.
+    # The old bug: the +4 fired whenever any conclusion marker was in the tail,
+    # even if the brand wasn't there. Fixed: condition is brand-in-tail only.
     tail = text_lower[-300:]
-    if brand_lower in tail or any(m in tail for m in _CONCLUSION_MARKERS):
-        if brand_lower in tail:
-            es.score += 4
-            es.details.append("✓ In conclusion +4")
+    if brand_lower in tail:
+        es.score += 4
+        es.details.append("✓ In conclusion +4")
 
     es.score = min(es.score, _PER_ENGINE_CAP)
     return es

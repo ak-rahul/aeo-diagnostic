@@ -1,11 +1,16 @@
 """
-ai_caller.py — Robust parallel AI engine caller with tenacity retries.
+ai_caller.py — OpenRouter-backed parallel AI engine caller.
+
+All three engines (GPT-4o, Claude, Gemini) are called via a single
+OpenRouter endpoint using the OpenAI-compatible API.  This eliminates
+the need for separate OpenAI / Anthropic / Google API keys.
 
 Features:
+  - Single AsyncOpenAI client (singleton) pointed at OpenRouter
   - All 3 engines called concurrently via asyncio.gather()
   - Per-engine timeout (30 s) via asyncio.wait_for()
-  - Exponential-back-off retries via tenacity (up to 3 attempts)
-  - Structured logging of latency and token usage
+  - Exponential-back-off retries for transient errors only (tenacity)
+  - Structured logging of latency
   - Graceful degradation: engine failure → error payload, not exception
 """
 
@@ -14,18 +19,29 @@ import os
 import time
 from typing import Any
 
+import httpx
 from dotenv import load_dotenv
 from tenacity import (
+    RetryError,
     retry,
     retry_if_exception_type,
     stop_after_attempt,
     wait_exponential,
-    RetryError,
 )
 
 from logger import log
 
 load_dotenv()
+
+# ── Config ─────────────────────────────────────────────────────────────────────
+_TIMEOUT_S = 30  # per-engine hard timeout
+
+# Model identifiers — overridable via env vars for easy future updates
+_MODEL_GPT    = os.getenv("MODEL_GPT",    "openai/gpt-4o")
+_MODEL_CLAUDE = os.getenv("MODEL_CLAUDE", "anthropic/claude-sonnet-4-5")
+_MODEL_GEMINI = os.getenv("MODEL_GEMINI", "google/gemini-1.5-pro")
+
+_OPENROUTER_BASE = "https://openrouter.ai/api/v1"
 
 # ── Shared system prompt ───────────────────────────────────────────────────────
 _SYSTEM = (
@@ -35,21 +51,35 @@ _SYSTEM = (
     "Be specific — generic answers are not helpful."
 )
 
-_TIMEOUT_S = 30  # per-engine hard timeout
+# ── Singleton async HTTP client via openai SDK ─────────────────────────────────
+# Initialised once at module level — avoids per-request TCP handshakes.
+def _get_client():
+    """Return a lazily-initialised AsyncOpenAI client for OpenRouter."""
+    import openai
+    api_key = os.getenv("OPENROUTER_API_KEY")
+    if not api_key:
+        raise RuntimeError("OPENROUTER_API_KEY is not set in environment / .env")
+    return openai.AsyncOpenAI(
+        api_key=api_key,
+        base_url=_OPENROUTER_BASE,
+        default_headers={
+            "HTTP-Referer": os.getenv("SITE_URL", "http://localhost:5173"),
+            "X-Title": os.getenv("SITE_NAME", "AEO Diagnostic"),
+        },
+        timeout=_TIMEOUT_S,
+    )
 
 
-# ── Retry decorator factory ────────────────────────────────────────────────────
+# ── Retry decorator — transient errors only ────────────────────────────────────
 def _make_retry():
-    """Return a tenacity retry decorator for transient AI API errors."""
-    import openai, anthropic
-
+    """Retry only on network/timeout errors, NOT on JSON or auth errors."""
+    import openai
     transient = (
         openai.RateLimitError,
         openai.APIConnectionError,
         openai.APITimeoutError,
-        anthropic.RateLimitError,
-        anthropic.APIConnectionError,
-        anthropic.APITimeoutError,
+        httpx.ConnectError,
+        httpx.TimeoutException,
         ConnectionError,
         TimeoutError,
     )
@@ -61,17 +91,17 @@ def _make_retry():
     )
 
 
-# ── OpenAI ────────────────────────────────────────────────────────────────────
-async def _call_openai_inner(query: str) -> dict[str, Any]:
-    import openai
-
-    client = openai.AsyncOpenAI(
-        api_key=os.getenv("OPENAI_API_KEY"),
-        timeout=_TIMEOUT_S,
-    )
+# ── Internal engine caller ─────────────────────────────────────────────────────
+async def _call_engine_inner(
+    model: str,
+    engine_label: str,
+    query: str,
+) -> dict[str, Any]:
+    """Call a single OpenRouter model and return a standardised response dict."""
+    client = _get_client()
     t0 = time.monotonic()
     resp = await client.chat.completions.create(
-        model="gpt-4o",
+        model=model,
         messages=[
             {"role": "system", "content": _SYSTEM},
             {"role": "user", "content": query},
@@ -82,99 +112,47 @@ async def _call_openai_inner(query: str) -> dict[str, Any]:
     latency = round(time.monotonic() - t0, 2)
     text = resp.choices[0].message.content or ""
     tokens = resp.usage.total_tokens if resp.usage else None
-    log.info("openai_done", latency_s=latency, tokens=tokens, chars=len(text))
-    return {"engine": "GPT-4o", "text": text, "error": None, "latency_s": latency}
+    log.info("engine_done", engine=engine_label, latency_s=latency, tokens=tokens, chars=len(text))
+    return {"engine": engine_label, "text": text, "error": None, "latency_s": latency}
 
 
-async def call_openai(query: str) -> dict[str, Any]:
-    decorated = _make_retry()(_call_openai_inner)
+async def _call_engine(
+    model: str,
+    engine_label: str,
+    query: str,
+) -> dict[str, Any]:
+    """Wrap _call_engine_inner with retry + timeout + error shielding."""
+    decorated = _make_retry()(lambda q: _call_engine_inner(model, engine_label, q))
     try:
         return await asyncio.wait_for(decorated(query), timeout=_TIMEOUT_S + 5)
     except RetryError as e:
-        log.error("openai_failed_retries", err=str(e))
-        return {"engine": "GPT-4o", "text": "", "error": f"Rate limit / retries exhausted: {e}", "latency_s": None}
+        log.error("engine_failed_retries", engine=engine_label, err=str(e))
+        return {"engine": engine_label, "text": "", "error": f"Rate limit / retries exhausted: {e}", "latency_s": None}
+    except asyncio.TimeoutError:
+        log.error("engine_timeout", engine=engine_label)
+        return {"engine": engine_label, "text": "", "error": "Request timed out", "latency_s": None}
     except Exception as e:
-        log.error("openai_failed", err=str(e))
-        return {"engine": "GPT-4o", "text": "", "error": str(e), "latency_s": None}
+        log.error("engine_failed", engine=engine_label, err=str(e))
+        return {"engine": engine_label, "text": "", "error": str(e), "latency_s": None}
 
 
-# ── Anthropic Claude ───────────────────────────────────────────────────────────
-async def _call_claude_inner(query: str) -> dict[str, Any]:
-    import anthropic
-
-    client = anthropic.AsyncAnthropic(
-        api_key=os.getenv("ANTHROPIC_API_KEY"),
-        timeout=_TIMEOUT_S,
-    )
-    t0 = time.monotonic()
-    msg = await client.messages.create(
-        model="claude-sonnet-4-5",
-        max_tokens=1400,
-        system=_SYSTEM,
-        messages=[{"role": "user", "content": query}],
-    )
-    latency = round(time.monotonic() - t0, 2)
-    text = msg.content[0].text if msg.content else ""
-    tokens = (msg.usage.input_tokens + msg.usage.output_tokens) if msg.usage else None
-    log.info("claude_done", latency_s=latency, tokens=tokens, chars=len(text))
-    return {"engine": "Claude Sonnet", "text": text, "error": None, "latency_s": latency}
+# ── Public per-engine callers (kept for backward compatibility) ────────────────
+async def call_openai(query: str) -> dict[str, Any]:
+    return await _call_engine(_MODEL_GPT, "GPT-4o", query)
 
 
 async def call_claude(query: str) -> dict[str, Any]:
-    decorated = _make_retry()(_call_claude_inner)
-    try:
-        return await asyncio.wait_for(decorated(query), timeout=_TIMEOUT_S + 5)
-    except RetryError as e:
-        log.error("claude_failed_retries", err=str(e))
-        return {"engine": "Claude Sonnet", "text": "", "error": f"Rate limit / retries exhausted: {e}", "latency_s": None}
-    except Exception as e:
-        log.error("claude_failed", err=str(e))
-        return {"engine": "Claude Sonnet", "text": "", "error": str(e), "latency_s": None}
-
-
-# ── Google Gemini ──────────────────────────────────────────────────────────────
-async def _call_gemini_inner(query: str) -> dict[str, Any]:
-    import google.generativeai as genai
-    from google.api_core.exceptions import ResourceExhausted, ServiceUnavailable
-
-    genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
-    model = genai.GenerativeModel(
-        model_name="gemini-1.5-pro",
-        system_instruction=_SYSTEM,
-    )
-    t0 = time.monotonic()
-    loop = asyncio.get_event_loop()
-
-    def _sync_call():
-        return model.generate_content(
-            query,
-            generation_config={"max_output_tokens": 1400, "temperature": 0.7},
-            request_options={"timeout": _TIMEOUT_S},
-        )
-
-    resp = await loop.run_in_executor(None, _sync_call)
-    latency = round(time.monotonic() - t0, 2)
-    text = resp.text if hasattr(resp, "text") else ""
-    log.info("gemini_done", latency_s=latency, chars=len(text))
-    return {"engine": "Gemini 1.5 Pro", "text": text, "error": None, "latency_s": latency}
+    return await _call_engine(_MODEL_CLAUDE, "Claude Sonnet", query)
 
 
 async def call_gemini(query: str) -> dict[str, Any]:
-    decorated = _make_retry()(_call_gemini_inner)
-    try:
-        return await asyncio.wait_for(decorated(query), timeout=_TIMEOUT_S + 5)
-    except RetryError as e:
-        log.error("gemini_failed_retries", err=str(e))
-        return {"engine": "Gemini 1.5 Pro", "text": "", "error": f"Rate limit / retries exhausted: {e}", "latency_s": None}
-    except Exception as e:
-        log.error("gemini_failed", err=str(e))
-        return {"engine": "Gemini 1.5 Pro", "text": "", "error": str(e), "latency_s": None}
+    return await _call_engine(_MODEL_GEMINI, "Gemini 1.5 Pro", query)
 
 
 # ── Parallel orchestrator ──────────────────────────────────────────────────────
 async def call_all_engines(query: str) -> list[dict[str, Any]]:
     """
-    Fire all three AI engines concurrently.
+    Fire all three AI engines concurrently via OpenRouter.
     Returns list[{engine, text, error, latency_s}].
     Never raises — engine errors are embedded in the payload.
     """

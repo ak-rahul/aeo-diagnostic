@@ -1,6 +1,9 @@
 """
 pdf_generator.py — Jinja2 + WeasyPrint PDF report generator
-Produces a clean, branded one-page PDF report of the AEO diagnostic.
+Fixes applied:
+  - autoescape=True prevents XSS / template injection
+  - Google Fonts @import removed (avoids external HTTP hanging WeasyPrint)
+  - System-safe font stack used instead
 """
 
 import os
@@ -13,12 +16,12 @@ HTML_TEMPLATE = """
 <head>
 <meta charset="UTF-8">
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;900&display=swap');
+  /* No Google Fonts import — avoids external HTTP call that can hang WeasyPrint */
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: 'Inter', sans-serif; background: #0a0a0f; color: #e2e8f0; padding: 40px; }
+  body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; background: #0a0a0f; color: #e2e8f0; padding: 40px; }
   .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 32px; padding-bottom: 20px; border-bottom: 2px solid #7c3aed; }
-  .logo { font-size: 28px; font-weight: 900; background: linear-gradient(135deg, #7c3aed, #06b6d4); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
-  .badge { background: linear-gradient(135deg, #7c3aed, #06b6d4); color: white; padding: 6px 16px; border-radius: 20px; font-size: 12px; font-weight: 600; }
+  .logo { font-size: 28px; font-weight: 900; color: #7c3aed; }
+  .badge { background: #7c3aed; color: white; padding: 6px 16px; border-radius: 20px; font-size: 12px; font-weight: 600; }
   h1 { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
   .query-box { background: #1a1a2e; border: 1px solid #7c3aed; border-radius: 10px; padding: 16px 20px; margin-bottom: 28px; }
   .query-box label { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: #7c3aed; }
@@ -42,9 +45,9 @@ HTML_TEMPLATE = """
   .gap-title { font-size: 13px; font-weight: 600; margin-bottom: 6px; }
   .gap-action { font-size: 12px; color: #94a3b8; }
   .gap-action strong { color: #06b6d4; }
-  .verdict-box { background: linear-gradient(135deg, #7c3aed22, #06b6d422); border: 1px solid #7c3aed; border-radius: 12px; padding: 18px 20px; margin-bottom: 28px; }
+  .verdict-box { background: #1a1a2e; border: 1px solid #7c3aed; border-radius: 12px; padding: 18px 20px; margin-bottom: 28px; }
   .footer { text-align: center; font-size: 11px; color: #475569; margin-top: 32px; padding-top: 16px; border-top: 1px solid #2d2d4e; }
-  .quick-win { background: #06b6d420; border: 1px solid #06b6d4; border-radius: 10px; padding: 14px 18px; margin-bottom: 28px; }
+  .quick-win { background: #0f2a2e; border: 1px solid #06b6d4; border-radius: 10px; padding: 14px 18px; margin-bottom: 28px; }
   .quick-win label { font-size: 11px; color: #06b6d4; text-transform: uppercase; letter-spacing: 1px; }
   .quick-win p { font-size: 14px; font-weight: 600; margin-top: 4px; }
 </style>
@@ -53,7 +56,7 @@ HTML_TEMPLATE = """
   <div class="header">
     <div>
       <div class="logo">AEO Diagnostic</div>
-      <div style="font-size:12px; color:#94a3b8; margin-top:4px;">AEO Diagnostic Report</div>
+      <div style="font-size:12px; color:#94a3b8; margin-top:4px;">AI Visibility Report</div>
     </div>
     <div>
       <div class="badge">AI Visibility Report Card</div>
@@ -135,7 +138,7 @@ HTML_TEMPLATE = """
 
   <div class="footer">
     <strong>AEO Diagnostic</strong> — The AI intelligence layer for e-commerce brands<br>
-    Report generated {{ date }} · AEO Diagnostic v1.0 · Powered by GPT-4o, Claude Sonnet & Gemini 1.5 Pro
+    Report generated {{ date }} · AEO Diagnostic v1.2 · Powered by OpenRouter (GPT-4o, Claude Sonnet &amp; Gemini 1.5 Pro)
   </div>
 </body>
 </html>
@@ -149,7 +152,8 @@ def generate_pdf_bytes(report: dict) -> bytes:
     except ImportError:
         raise RuntimeError("WeasyPrint not installed. Run: pip install weasyprint")
 
-    env = Environment(loader=BaseLoader())
+    # autoescape=True prevents XSS / Jinja2 template injection via user-supplied fields
+    env = Environment(loader=BaseLoader(), autoescape=True)
     template = env.from_string(HTML_TEMPLATE)
 
     user_brand = report.get("user_brand", "")

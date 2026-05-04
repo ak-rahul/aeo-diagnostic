@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Bot, Sparkles, Download, Search } from 'lucide-react';
+import { Bot, Sparkles, Download, Search, AlertCircle, RefreshCw } from 'lucide-react';
 import './index.css';
 import './app.css';
 
@@ -9,15 +9,15 @@ import AIPanels from './components/AIPanels';
 import Leaderboard from './components/Leaderboard';
 import ScoreCard from './components/ScoreCard';
 import GapAnalysis from './components/GapAnalysis';
-import { DEMO_RESULT } from './constants';
-
-const API_BASE = import.meta.env.VITE_API_URL || '';
+import ErrorBoundary from './components/ErrorBoundary';
+// API_BASE sourced from a single location — no more dual definition
+import { API_BASE, DEMO_RESULT } from './constants';
 
 export default function App() {
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
   const [step, setStep] = useState(null);
-  const [isDemo, setIsDemo] = useState(false);
+  const [errorMsg, setErrorMsg] = useState(null);  // explicit error state
   const [brand, setBrand] = useState('');
   const abortControllerRef = useRef(null);
 
@@ -32,7 +32,7 @@ export default function App() {
   const run = useCallback(async ({ query, userBrand }) => {
     setLoading(true);
     setResult(null);
-    setIsDemo(false);
+    setErrorMsg(null);
     setBrand(userBrand);
     setStep('calling');
 
@@ -52,33 +52,48 @@ export default function App() {
         signal: abortControllerRef.current.signal,
       });
       timers.forEach(clearTimeout);
-      if (!res.ok) throw new Error('API Error');
+
+      if (!res.ok) {
+        // Surface the actual error from the backend
+        let detail = `Server error (${res.status})`;
+        try {
+          const body = await res.json();
+          detail = body.detail || detail;
+        } catch (_) { /* ignore parse failure */ }
+        throw new Error(detail);
+      }
+
       const data = await res.json();
       setStep('done');
       setResult(data);
     } catch (err) {
       timers.forEach(clearTimeout);
-      if (err.name === 'AbortError') return; // Do not show demo if manually cancelled
 
-      const demo = structuredClone(DEMO_RESULT);
-      demo.query = query;
-      demo.user_brand = userBrand;
-      if (userBrand && !demo.leaderboard.find(b => b.brand.toLowerCase() === userBrand.toLowerCase())) {
-        demo.leaderboard.push({
-          rank: demo.leaderboard.length + 1,
-          brand: userBrand,
-          total_score: 0,
-          rag_status: 'red',
-          ais_mentioned_in: 0,
-          breakdown: { 'GPT-4o': { score: 0 }, 'Claude Sonnet': { score: 0 }, 'Gemini 1.5 Pro': { score: 0 } },
-        });
+      if (err.name === 'AbortError') {
+        // User manually cancelled — show nothing, don't fall into demo
+        setLoading(false);
+        setStep(null);
+        return;
       }
-      setStep('done');
-      setResult(demo);
-      setIsDemo(true);
+
+      // Real error: show a clear error state instead of silently showing demo
+      setErrorMsg(err.message || 'Failed to connect to the diagnostic backend.');
+      setStep(null);
     } finally {
       setLoading(false);
     }
+  }, []);
+
+  const runDemo = useCallback(({ query, userBrand }) => {
+    // Demo is now opt-in only
+    setLoading(false);
+    setErrorMsg(null);
+    setBrand(userBrand || 'Your Brand');
+    const demo = structuredClone(DEMO_RESULT);
+    demo.query = query || demo.query;
+    demo.user_brand = userBrand || demo.user_brand;
+    setResult(demo);
+    setStep('done');
   }, []);
 
   const handleExport = async () => {
@@ -94,8 +109,10 @@ export default function App() {
       const url = URL.createObjectURL(blob);
       const a = Object.assign(document.createElement('a'), { href: url, download: 'aeo-report.pdf' });
       a.click();
+      // Revoke to prevent memory leak
+      setTimeout(() => URL.revokeObjectURL(url), 100);
     } catch {
-      alert('PDF export requires the FastAPI backend running.');
+      alert('PDF export requires the FastAPI backend to be running.');
     }
   };
 
@@ -133,27 +150,47 @@ export default function App() {
           Is your brand invisible to <span className="text-gradient-accent">AI Search?</span>
         </h1>
         <p className="hero-subtitle">
-          Discover exactly how ChatGPT, Claude & Gemini rank your products,
+          Discover exactly how ChatGPT, Claude &amp; Gemini rank your products,
           and uncover the actionable gaps keeping you off the AI leaderboard.
         </p>
 
         <QueryInput onSubmit={run} onCancel={handleCancel} isLoading={loading} step={step} />
+
+        {/* Opt-in demo button */}
+        {!loading && !hasResults && (
+          <div style={{ marginTop: 12, textAlign: 'center' }}>
+            <button
+              className="btn-secondary"
+              style={{ fontSize: 12, padding: '4px 14px' }}
+              onClick={() => runDemo({ query: 'best magnesium supplement for seniors', userBrand: '' })}
+            >
+              <Bot size={12} style={{ marginRight: 6 }} />
+              View sample demo
+            </button>
+          </div>
+        )}
       </motion.section>
 
       {/* Main Content */}
       <main className="main-content">
         <AnimatePresence>
-          {isDemo && (
+          {/* Explicit error state — never silently shows fake data */}
+          {errorMsg && !loading && (
             <motion.div
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
               className="glass"
-              style={{ padding: 16, borderRadius: 'var(--radius-md)', borderLeft: '4px solid var(--warning)', display: 'flex', gap: 12, alignItems: 'center' }}
+              style={{ padding: 20, borderRadius: 'var(--radius-md)', borderLeft: '4px solid var(--danger)', display: 'flex', gap: 16, alignItems: 'flex-start', marginBottom: 16 }}
             >
-              <span style={{ fontSize: 20 }}>⚠️</span>
-              <p style={{ fontSize: 14, color: 'var(--text-secondary)' }}>
-                <strong style={{ color: '#FFF' }}>Demo Mode Active.</strong> The backend API keys were not found. Showing simulated data for demonstration.
-              </p>
+              <AlertCircle size={20} color="var(--danger)" style={{ flexShrink: 0, marginTop: 2 }} />
+              <div>
+                <strong style={{ color: '#FFF', display: 'block', marginBottom: 4 }}>Diagnostic Failed</strong>
+                <p style={{ fontSize: 14, color: 'var(--text-secondary)', marginBottom: 12 }}>{errorMsg}</p>
+                <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                  Make sure your <code>OPENROUTER_API_KEY</code> is set in <code>.env</code> and the backend is running.
+                </p>
+              </div>
             </motion.div>
           )}
 
@@ -167,8 +204,13 @@ export default function App() {
                 <h2 className="section-title">
                   <Search size={20} /> Live AI Responses
                 </h2>
+                {result?.from_cache && (
+                  <span className="badge" style={{ fontSize: 11 }}>Cached result</span>
+                )}
               </div>
-              <AIPanels responses={result?.responses} isLoading={loading} />
+              <ErrorBoundary>
+                <AIPanels responses={result?.responses} isLoading={loading} />
+              </ErrorBoundary>
             </motion.section>
           )}
 
@@ -182,8 +224,12 @@ export default function App() {
                 <h2 className="section-title">Visibility Dashboard</h2>
               </div>
               <div className="dashboard-grid">
-                <ScoreCard leaderboard={result.leaderboard} userBrand={brand} />
-                <Leaderboard leaderboard={result.leaderboard} userBrand={brand} />
+                <ErrorBoundary>
+                  <ScoreCard leaderboard={result.leaderboard} userBrand={brand} />
+                </ErrorBoundary>
+                <ErrorBoundary>
+                  <Leaderboard leaderboard={result.leaderboard} userBrand={brand} isLoading={loading} />
+                </ErrorBoundary>
               </div>
             </motion.section>
           )}
@@ -202,7 +248,9 @@ export default function App() {
                   <Download size={14} /> Export Report
                 </button>
               </div>
-              <GapAnalysis gapAnalysis={result.gap_analysis} />
+              <ErrorBoundary>
+                <GapAnalysis gapAnalysis={result.gap_analysis} />
+              </ErrorBoundary>
             </motion.section>
           )}
         </AnimatePresence>

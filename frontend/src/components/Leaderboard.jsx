@@ -3,8 +3,29 @@ import { Download } from 'lucide-react';
 
 const ENGINES = ['GPT-4o', 'Claude Sonnet', 'Gemini 1.5 Pro'];
 
-export default function Leaderboard({ leaderboard, userBrand }) {
-  if (!leaderboard?.length) return null;
+export default function Leaderboard({ leaderboard, userBrand, isLoading }) {
+  // Distinguish: null = still loading, [] = loaded but empty, populated = results
+  if (isLoading) {
+    return (
+      <div className="glass-card" style={{ padding: 24 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {[1, 2, 3, 4].map(i => (
+            <div key={i} className="skeleton-pulse" style={{ height: 36, borderRadius: 8 }} />
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  if (!leaderboard) return null;
+
+  if (leaderboard.length === 0) {
+    return (
+      <div className="glass-card" style={{ padding: 32, textAlign: 'center', color: 'var(--text-muted)' }}>
+        No brands detected in AI responses.
+      </div>
+    );
+  }
 
   const handleExportCSV = () => {
     const header = ['Rank', 'Brand', 'Visibility Score', 'GPT-4o Score', 'Claude Score', 'Gemini Score', 'Status'];
@@ -27,6 +48,8 @@ export default function Leaderboard({ leaderboard, userBrand }) {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    // Fix: revoke blob URL after click to prevent memory leak
+    setTimeout(() => URL.revokeObjectURL(url), 100);
   };
 
   return (
