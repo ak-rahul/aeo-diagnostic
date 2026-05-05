@@ -138,7 +138,7 @@ HTML_TEMPLATE = """
 
   <div class="footer">
     <strong>AEO Diagnostic</strong> — The AI intelligence layer for e-commerce brands<br>
-    Report generated {{ date }} · AEO Diagnostic v1.2 · Powered by OpenRouter (GPT-4o, Claude Sonnet &amp; Gemini 1.5 Pro)
+    Report generated {{ date }} · AEO Diagnostic v1.3 · Powered by OpenRouter (GPT-4o, Claude Sonnet &amp; Gemini Pro Latest)
   </div>
 </body>
 </html>
