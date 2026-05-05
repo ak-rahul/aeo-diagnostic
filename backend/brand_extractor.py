@@ -44,21 +44,29 @@ _EXTRACT_MODEL = os.getenv("MODEL_EXTRACT", "anthropic/claude-haiku-4-5")
 _OPENROUTER_BASE = "https://openrouter.ai/api/v1"
 
 
-def _get_client():
-    """Singleton-style OpenRouter client for brand extraction."""
-    import openai
-    api_key = os.getenv("OPENROUTER_API_KEY")
-    if not api_key:
-        raise RuntimeError("OPENROUTER_API_KEY not set")
-    return openai.AsyncOpenAI(
-        api_key=api_key,
-        base_url=_OPENROUTER_BASE,
-        default_headers={
-            "HTTP-Referer": os.getenv("SITE_URL", "http://localhost:5173"),
-            "X-Title": os.getenv("SITE_NAME", "AEO Diagnostic"),
-        },
-        timeout=20,
-    )
+# ── True module-level singleton client ───────────────────────────────────────
+# Fix: was creating a new AsyncOpenAI (new connection pool) on every call.
+_CLIENT: Any = None
+
+
+def _get_client() -> Any:
+    """Return the module-level singleton AsyncOpenAI client for brand extraction."""
+    global _CLIENT
+    if _CLIENT is None:
+        import openai
+        api_key = os.getenv("OPENROUTER_API_KEY")
+        if not api_key:
+            raise RuntimeError("OPENROUTER_API_KEY not set")
+        _CLIENT = openai.AsyncOpenAI(
+            api_key=api_key,
+            base_url=_OPENROUTER_BASE,
+            default_headers={
+                "HTTP-Referer": os.getenv("SITE_URL", "http://localhost:5173"),
+                "X-Title": os.getenv("SITE_NAME", "AEO Diagnostic"),
+            },
+            timeout=20,
+        )
+    return _CLIENT
 
 
 def _validate_and_clean(raw: str) -> list[str]:

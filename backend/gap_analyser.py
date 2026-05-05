@@ -3,11 +3,15 @@ gap_analyser.py — OpenRouter-powered competitive gap analysis with retry.
 
 Uses OpenRouter (Claude) to generate AEO gap analysis.
 Falls back to a generic, category-agnostic template on any API failure.
+
+Fix: _get_client() now uses a module-level singleton so the connection
+pool is reused across calls instead of being recreated per request.
 """
 
 import json
 import os
 import re
+from typing import Any
 
 from dotenv import load_dotenv
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
@@ -86,25 +90,32 @@ _FALLBACK = {
     "estimated_score_if_fixed": 70,
 }
 
-_GAP_MODEL = os.getenv("MODEL_GAP", "anthropic/claude-sonnet-4-5")
+_GAP_MODEL = os.getenv("MODEL_GAP", "anthropic/claude-sonnet-4.6")
 _OPENROUTER_BASE = "https://openrouter.ai/api/v1"
 
+# ── True module-level singleton client ─────────────────────────────────────────
+# Fix: was creating a new AsyncOpenAI (new connection pool) on every call.
+_CLIENT: Any = None
 
-def _get_client():
-    """Singleton-style OpenRouter client for gap analysis."""
-    import openai
-    api_key = os.getenv("OPENROUTER_API_KEY")
-    if not api_key:
-        raise RuntimeError("OPENROUTER_API_KEY not set")
-    return openai.AsyncOpenAI(
-        api_key=api_key,
-        base_url=_OPENROUTER_BASE,
-        default_headers={
-            "HTTP-Referer": os.getenv("SITE_URL", "http://localhost:5173"),
-            "X-Title": os.getenv("SITE_NAME", "AEO Diagnostic"),
-        },
-        timeout=25,
-    )
+
+def _get_client() -> Any:
+    """Return the module-level singleton AsyncOpenAI client for gap analysis."""
+    global _CLIENT
+    if _CLIENT is None:
+        import openai
+        api_key = os.getenv("OPENROUTER_API_KEY")
+        if not api_key:
+            raise RuntimeError("OPENROUTER_API_KEY not set")
+        _CLIENT = openai.AsyncOpenAI(
+            api_key=api_key,
+            base_url=_OPENROUTER_BASE,
+            default_headers={
+                "HTTP-Referer": os.getenv("SITE_URL", "http://localhost:5173"),
+                "X-Title": os.getenv("SITE_NAME", "AEO Diagnostic"),
+            },
+            timeout=25,
+        )
+    return _CLIENT
 
 
 def _transient_retry():
@@ -194,7 +205,6 @@ async def analyse_gaps(
 
     try:
         result = await _call_gap_api(prompt)
-        # Ensure required fields exist
         result.setdefault("gaps", [])
         result.setdefault("overall_verdict", "Analysis complete.")
         result.setdefault("quick_win", result["gaps"][0]["action"] if result["gaps"] else "")

@@ -18,7 +18,7 @@ HTML_TEMPLATE = """
 <style>
   /* No Google Fonts import — avoids external HTTP call that can hang WeasyPrint */
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; background: #0a0a0f; color: #e2e8f0; padding: 40px; }
+  body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; background: #0a0a0f; color: #e2e8f0; padding: 40px; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
   .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 32px; padding-bottom: 20px; border-bottom: 2px solid #7c3aed; }
   .logo { font-size: 28px; font-weight: 900; color: #7c3aed; }
   .badge { background: #7c3aed; color: white; padding: 6px 16px; border-radius: 20px; font-size: 12px; font-weight: 600; }

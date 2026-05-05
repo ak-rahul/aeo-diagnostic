@@ -15,8 +15,10 @@ import os
 import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime
+from pathlib import Path
 from typing import Optional
 
+import diskcache
 from cachetools import TTLCache
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request, Response
@@ -43,9 +45,16 @@ limiter = Limiter(key_func=get_remote_address)
 # ── In-memory cache (max 100 results, 5-minute TTL) ───────────────────────────
 _cache: TTLCache = TTLCache(maxsize=100, ttl=300)
 
-# Per-request result store (keyed by result UUID) — fixes _last_result race condition
-_result_store: dict[str, dict] = {}
-_MAX_STORED = 50  # prevent unbounded growth
+# Per-request result store — diskcache persists across server restarts.
+# Fix: in-memory dict (_result_store) was wiped on every restart, making
+# GET /api/export/pdf/{id} always return 404 after a redeploy.
+_CACHE_DIR = Path(os.getenv("RESULT_CACHE_DIR", ".result_cache"))
+_result_store: diskcache.Cache = diskcache.Cache(
+    str(_CACHE_DIR),
+    size_limit=50 * 1024 * 1024,  # 50 MB cap
+    eviction_policy="least-recently-used",
+)
+_MAX_STORED = 200  # generous limit since diskcache uses disk not RAM
 
 
 # ── Lifespan (replaces deprecated @app.on_event) ──────────────────────────────
@@ -54,10 +63,15 @@ async def lifespan(app: FastAPI):
     keys = {
         "OPENROUTER_API_KEY": bool(os.getenv("OPENROUTER_API_KEY")),
     }
-    log.info("startup", **keys, version="1.2.0")
-    missing = [k for k, v in keys.items() if not v]
-    if missing:
-        log.warning("missing_api_keys", keys=missing)
+    # Validate required env vars at startup — surfaces missing keys immediately
+    # instead of waiting for the first user request to fail with a 503.
+    if not os.getenv("OPENROUTER_API_KEY"):
+        log.error(
+            "startup_missing_key",
+            key="OPENROUTER_API_KEY",
+            hint="Add OPENROUTER_API_KEY to your .env file. Get a free key at https://openrouter.ai/keys",
+        )
+    log.info("startup", **keys, version="1.3.0", result_cache=str(_CACHE_DIR))
     yield
     log.info("shutdown")
 
@@ -158,14 +172,11 @@ def _build_result(
 
 
 def _store_result(result: dict) -> None:
-    """Store result keyed by its UUID, evict oldest if over limit."""
+    """Store result keyed by its UUID in the persistent diskcache store."""
     rid = result.get("id")
     if not rid:
         return
-    if len(_result_store) >= _MAX_STORED:
-        oldest = next(iter(_result_store))
-        del _result_store[oldest]
-    _result_store[rid] = result
+    _result_store.set(rid, result, expire=86400)  # 24-hour TTL per result
 
 
 # ── Health ─────────────────────────────────────────────────────────────────────
@@ -173,11 +184,12 @@ def _store_result(result: dict) -> None:
 async def health():
     return {
         "status": "ok",
-        "version": "1.2.0",
+        "version": "1.3.0",
         "apis": {
             "openrouter": bool(os.getenv("OPENROUTER_API_KEY")),
         },
         "cache_size": len(_cache),
+        "result_store_size": len(_result_store),
         "allowed_origins": _ALLOWED_ORIGINS,
     }
 

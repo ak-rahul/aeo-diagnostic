@@ -6,7 +6,7 @@ OpenRouter endpoint using the OpenAI-compatible API.  This eliminates
 the need for separate OpenAI / Anthropic / Google API keys.
 
 Features:
-  - Single AsyncOpenAI client (singleton) pointed at OpenRouter
+  - True module-level singleton AsyncOpenAI client (connection pool reused)
   - All 3 engines called concurrently via asyncio.gather()
   - Per-engine timeout (30 s) via asyncio.wait_for()
   - Exponential-back-off retries for transient errors only (tenacity)
@@ -39,35 +39,43 @@ _TIMEOUT_S = 30  # per-engine hard timeout
 # Model identifiers — overridable via env vars for easy future updates
 _MODEL_GPT    = os.getenv("MODEL_GPT",    "openai/gpt-5.1")
 _MODEL_CLAUDE = os.getenv("MODEL_CLAUDE", "anthropic/claude-sonnet-4.6")
-_MODEL_GEMINI = os.getenv("MODEL_GEMINI", "~google/gemini-pro-latest")
+_MODEL_GEMINI = os.getenv("MODEL_GEMINI", "google/gemini-2.5-flash")   # stable & fast
 
 _OPENROUTER_BASE = "https://openrouter.ai/api/v1"
 
 # ── Shared system prompt ───────────────────────────────────────────────────────
+# Kept under 60 tokens to reduce per-call cost across all 3 engines.
 _SYSTEM = (
-    "You are a knowledgeable product recommendation assistant for shoppers. "
-    "When asked about products, ALWAYS name at least 6-8 specific brands and/or products, "
-    "explain why each is recommended, and use clear formatting. "
-    "Be specific — generic answers are not helpful."
+    "You are a knowledgeable product recommendation assistant. "
+    "Name at least 6-8 specific brands, explain why each is recommended, "
+    "and use clear formatting. Be specific."
 )
 
-# ── Singleton async HTTP client via openai SDK ─────────────────────────────────
-# Initialised once at module level — avoids per-request TCP handshakes.
-def _get_client():
-    """Return a lazily-initialised AsyncOpenAI client for OpenRouter."""
-    import openai
-    api_key = os.getenv("OPENROUTER_API_KEY")
-    if not api_key:
-        raise RuntimeError("OPENROUTER_API_KEY is not set in environment / .env")
-    return openai.AsyncOpenAI(
-        api_key=api_key,
-        base_url=_OPENROUTER_BASE,
-        default_headers={
-            "HTTP-Referer": os.getenv("SITE_URL", "http://localhost:5173"),
-            "X-Title": os.getenv("SITE_NAME", "AEO Diagnostic"),
-        },
-        timeout=_TIMEOUT_S,
-    )
+# ── True singleton client — module-level, NOT recreated per call ───────────────
+# Fix: was creating a new AsyncOpenAI (and new TCP connection pool) on every
+# engine call. Now the pool is reused for all concurrent requests.
+_CLIENT: Any = None  # openai.AsyncOpenAI once initialised
+
+
+def _get_client() -> Any:
+    """Return the module-level singleton AsyncOpenAI client for OpenRouter."""
+    global _CLIENT
+    if _CLIENT is None:
+        import openai
+        api_key = os.getenv("OPENROUTER_API_KEY")
+        if not api_key:
+            raise RuntimeError("OPENROUTER_API_KEY is not set in environment / .env")
+        _CLIENT = openai.AsyncOpenAI(
+            api_key=api_key,
+            base_url=_OPENROUTER_BASE,
+            default_headers={
+                "HTTP-Referer": os.getenv("SITE_URL", "http://localhost:5173"),
+                "X-Title": os.getenv("SITE_NAME", "AEO Diagnostic"),
+            },
+            timeout=_TIMEOUT_S,
+        )
+        log.info("openai_client_created", base=_OPENROUTER_BASE)
+    return _CLIENT
 
 
 # ── Retry decorator — transient errors only ────────────────────────────────────

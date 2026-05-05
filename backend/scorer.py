@@ -5,16 +5,22 @@ Score components (max 100):
   Base mention (per engine):      +30   (max 90 across 3)
   Top-3 position bonus (ordinal): +10
   Top-6 position bonus (ordinal): +5
-  Multiple mentions (≥2):         +5
+  Multiple mentions (>=2):        +5
   Positive sentiment context:     +3
   Conclusion / summary mention:   +4
   Per-engine cap:                 47
   Global cap:                     100
 
 RAG thresholds:
-  green  ≥ 70
-  amber  ≥ 35
-  red    < 35
+  green  >= 70
+  amber  >= 35
+  red    <  35
+
+Fix: fuzz.partial_ratio with threshold 85 produced false positives for
+short brand names (e.g. "NOW" matched inside "know").
+Resolution:
+  - Brands < 5 chars → exact word-boundary regex only
+  - Conclusion check → same _is_mentioned() guard, not raw partial_ratio
 """
 
 from __future__ import annotations
@@ -70,8 +76,25 @@ def _normalise(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
+def _is_mentioned(norm_brand: str, norm_text: str) -> bool:
+    """
+    Robust mention check that avoids false positives for short brand names.
+
+    Short brands (< 5 chars after normalisation) use ONLY exact word-boundary
+    regex.  This prevents "NOW" matching inside "know", "Swanson" inside
+    "swansong", etc.
+
+    Longer brands use fuzzy partial_ratio >= 85 which handles punctuation
+    differences like "Doctor's Best" vs "Doctors Best".
+    """
+    if len(norm_brand) < 5:
+        pattern = r"\b" + re.escape(norm_brand) + r"\b"
+        return bool(re.search(pattern, norm_text))
+    return fuzz.partial_ratio(norm_brand, norm_text) >= 85
+
+
 def _score_engine(brand: str, text: str) -> EngineScore:
-    """Score a brand against a single engine response using fuzzy logic and ordinal positioning."""
+    """Score a brand against a single engine response."""
     es = EngineScore()
     if not text:
         return es
@@ -79,24 +102,20 @@ def _score_engine(brand: str, text: str) -> EngineScore:
     text_lower = text.lower()
     norm_text = _normalise(text)
     norm_brand = _normalise(brand)
-    
-    # 1. Fuzzy Mention Detection
-    # Using partial_ratio to handle slight variations (e.g. "Doctor's Best" vs "Doctors Best")
-    similarity = fuzz.partial_ratio(norm_brand, norm_text)
-    if similarity < 85:
+
+    # 1. Mention detection — uses robust guard against short-name false positives
+    if not _is_mentioned(norm_brand, norm_text):
         es.details.append("✗ Not mentioned")
         return es
 
     es.mentioned = True
-    
-    # Count occurrences using regex on normalised text to avoid overlapping matches
-    # We use \b to ensure word boundaries
-    pattern = r'\b' + re.escape(norm_brand) + r'\b'
-    # Fallback to direct count if regex fails to compile
+
+    # Count occurrences using word-boundary regex
+    pattern = r"\b" + re.escape(norm_brand) + r"\b"
     try:
         es.mention_count = len(re.findall(pattern, norm_text))
         if es.mention_count == 0:
-            es.mention_count = 1 # We know it was mentioned via fuzzy match
+            es.mention_count = 1  # confirmed via fuzzy match
     except re.error:
         es.mention_count = norm_text.count(norm_brand)
 
@@ -108,12 +127,11 @@ def _score_engine(brand: str, text: str) -> EngineScore:
         es.score += 5
         es.details.append("✓ Multiple mentions +5")
 
-    # 2. Ordinal Position Bonus (extract numbered lists like "1. Brand A", "2. Brand B")
-    # This is more accurate than character position for LLM recommendations
+    # 2. Ordinal position bonus (numbered/bulleted list)
     list_items = re.findall(r"(?:^|\n)\s*(?:\d+\.|\-|\*)\s+([^\n]+)", text)
     ordinal_pos = -1
     for i, item in enumerate(list_items):
-        if fuzz.partial_ratio(norm_brand, _normalise(item)) >= 85:
+        if _is_mentioned(norm_brand, _normalise(item)):
             ordinal_pos = i + 1
             break
 
@@ -125,7 +143,7 @@ def _score_engine(brand: str, text: str) -> EngineScore:
             es.score += 5
             es.details.append(f"✓ Top 6 rank (List #{ordinal_pos}) +5")
     else:
-        # Fallback to character position if no list is found
+        # Fallback to character position
         first_idx = norm_text.find(norm_brand)
         total_len = len(norm_text)
         if first_idx >= 0 and total_len > 0:
@@ -136,11 +154,10 @@ def _score_engine(brand: str, text: str) -> EngineScore:
                 es.score += 5
                 es.details.append("✓ Top 50% position +5")
 
-    # 3. Positive-sentiment context (±200 chars around first fuzzy match)
-    match_idx = text_lower.find(brand.lower()) 
+    # 3. Positive-sentiment context (±200 chars around first match)
+    match_idx = text_lower.find(brand.lower())
     if match_idx == -1:
-        match_idx = norm_text.find(norm_brand) # fallback to approx position
-        
+        match_idx = norm_text.find(norm_brand)
     if match_idx >= 0:
         lo = max(0, match_idx - 200)
         hi = min(len(text_lower), match_idx + 200)
@@ -149,9 +166,11 @@ def _score_engine(brand: str, text: str) -> EngineScore:
             es.score += 3
             es.details.append("✓ Positive context +3")
 
-    # 4. Conclusion mention
+    # 4. Conclusion mention — uses the same robust guard, not raw partial_ratio
+    # Fix: previously fuzz.partial_ratio on the last 300 chars would give false
+    # positives because brand fragments often appear in unrelated conclusion text.
     tail = norm_text[-300:]
-    if fuzz.partial_ratio(norm_brand, tail) >= 85:
+    if _is_mentioned(norm_brand, tail):
         es.score += 4
         es.details.append("✓ In conclusion +4")
 
@@ -204,7 +223,6 @@ def build_leaderboard(brands: list[str], responses: list[dict]) -> list[dict]:
     Score all brands, deduplicate, sort descending, assign ranks.
     Returns a list of plain dicts (JSON-serialisable).
     """
-    # Deduplicate brands case-insensitively, keep first casing encountered
     seen: dict[str, str] = {}
     for b in brands:
         key = _normalise(b)

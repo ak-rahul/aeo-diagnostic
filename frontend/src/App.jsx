@@ -49,12 +49,15 @@ function AppInner() {
   const [requestLatency, setRequestLatency] = useState(null);
   const abortRef = useRef(null);
 
-  // Auto-run from URL on mount
+  // Auto-run from URL on mount — sanitize params before use
   useEffect(() => {
     const p = new URLSearchParams(window.location.search);
-    const q = p.get('q'), b = p.get('brand');
-    if (q) setTimeout(() => run({ query: q, userBrand: b || '' }), 400);
-  }, []);
+    // Sanitize: strip HTML/script chars and control chars from URL params
+    const sanitize = (s) => (s || '').replace(/[<>"'`]/g, '').trim().slice(0, 300);
+    const q = sanitize(p.get('q'));
+    const b = sanitize(p.get('brand'));
+    if (q.length >= 5) setTimeout(() => run({ query: q, userBrand: b }), 400);
+  }, []); // intentionally empty — runs once on mount only
 
   // ── Core run ────────────────────────────────────────────────────────────────
   const run = useCallback(async ({ query, userBrand }) => {
@@ -106,7 +109,7 @@ function AppInner() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [toast]); // toast in deps — prevents stale closure referencing an outdated toast context
 
   const handleRerun = useCallback(() => {
     if (lastQuery) run({ query: lastQuery, userBrand: lastBrand });
