@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Bot, Sparkles, Download, Search, AlertCircle, RefreshCw } from 'lucide-react';
+import { Bot, Sparkles, Download, Search, AlertCircle, RefreshCw, FileJson } from 'lucide-react';
 import './index.css';
 import './app.css';
 
@@ -10,15 +10,15 @@ import Leaderboard from './components/Leaderboard';
 import ScoreCard from './components/ScoreCard';
 import GapAnalysis from './components/GapAnalysis';
 import ErrorBoundary from './components/ErrorBoundary';
-// API_BASE sourced from a single location — no more dual definition
 import { API_BASE, DEMO_RESULT } from './constants';
 
 export default function App() {
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
   const [step, setStep] = useState(null);
-  const [errorMsg, setErrorMsg] = useState(null);  // explicit error state
+  const [errorMsg, setErrorMsg] = useState(null);
   const [brand, setBrand] = useState('');
+  const [requestLatency, setRequestLatency] = useState(null);
   const abortControllerRef = useRef(null);
 
   const handleCancel = useCallback(() => {
@@ -35,6 +35,7 @@ export default function App() {
     setErrorMsg(null);
     setBrand(userBrand);
     setStep('calling');
+    setRequestLatency(null);
 
     abortControllerRef.current = new AbortController();
 
@@ -43,6 +44,8 @@ export default function App() {
       setTimeout(() => setStep('scoring'), 10000),
       setTimeout(() => setStep('analysing'), 14000),
     ];
+
+    const t0 = performance.now();
 
     try {
       const res = await fetch(`${API_BASE}/api/diagnostic`, {
@@ -54,7 +57,6 @@ export default function App() {
       timers.forEach(clearTimeout);
 
       if (!res.ok) {
-        // Surface the actual error from the backend
         let detail = `Server error (${res.status})`;
         try {
           const body = await res.json();
@@ -64,19 +66,20 @@ export default function App() {
       }
 
       const data = await res.json();
+      const t1 = performance.now();
+      setRequestLatency(((t1 - t0) / 1000).toFixed(2));
+      
       setStep('done');
       setResult(data);
     } catch (err) {
       timers.forEach(clearTimeout);
 
       if (err.name === 'AbortError') {
-        // User manually cancelled — show nothing, don't fall into demo
         setLoading(false);
         setStep(null);
         return;
       }
 
-      // Real error: show a clear error state instead of silently showing demo
       setErrorMsg(err.message || 'Failed to connect to the diagnostic backend.');
       setStep(null);
     } finally {
@@ -85,7 +88,6 @@ export default function App() {
   }, []);
 
   const runDemo = useCallback(({ query, userBrand }) => {
-    // Demo is now opt-in only
     setLoading(false);
     setErrorMsg(null);
     setBrand(userBrand || 'Your Brand');
@@ -93,10 +95,11 @@ export default function App() {
     demo.query = query || demo.query;
     demo.user_brand = userBrand || demo.user_brand;
     setResult(demo);
+    setRequestLatency(null);
     setStep('done');
   }, []);
 
-  const handleExport = async () => {
+  const handleExportPDF = async () => {
     if (!result) return;
     try {
       const res = await fetch(`${API_BASE}/api/export/pdf-from-result`, {
@@ -109,11 +112,19 @@ export default function App() {
       const url = URL.createObjectURL(blob);
       const a = Object.assign(document.createElement('a'), { href: url, download: 'aeo-report.pdf' });
       a.click();
-      // Revoke to prevent memory leak
       setTimeout(() => URL.revokeObjectURL(url), 100);
     } catch {
       alert('PDF export requires the FastAPI backend to be running.');
     }
+  };
+
+  const handleExportJSON = () => {
+    if (!result) return;
+    const blob = new Blob([JSON.stringify(result, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = Object.assign(document.createElement('a'), { href: url, download: `aeo-result-${new Date().getTime()}.json` });
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 100);
   };
 
   const hasResults = Boolean(result && !loading);
@@ -174,7 +185,7 @@ export default function App() {
       {/* Main Content */}
       <main className="main-content">
         <AnimatePresence>
-          {/* Explicit error state — never silently shows fake data */}
+          {/* Explicit error state */}
           {errorMsg && !loading && (
             <motion.div
               initial={{ opacity: 0, height: 0 }}
@@ -204,8 +215,21 @@ export default function App() {
                 <h2 className="section-title">
                   <Search size={20} /> Live AI Responses
                 </h2>
-                {result?.from_cache && (
-                  <span className="badge" style={{ fontSize: 11 }}>Cached result</span>
+                
+                {hasResults && (
+                  <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+                    {requestLatency && (
+                      <span className="badge" style={{ fontSize: 11, background: 'rgba(16, 185, 129, 0.1)', color: 'var(--success)', borderColor: 'rgba(16, 185, 129, 0.2)' }}>
+                        ⏱ {requestLatency}s API Latency
+                      </span>
+                    )}
+                    {result?.from_cache && (
+                      <span className="badge" style={{ fontSize: 11 }}>Cached result</span>
+                    )}
+                    <button onClick={handleExportJSON} className="btn-secondary" title="Download raw JSON data for developers" style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 10px', fontSize: 12 }}>
+                      <FileJson size={14} /> JSON
+                    </button>
+                  </div>
                 )}
               </div>
               <ErrorBoundary>
@@ -244,7 +268,7 @@ export default function App() {
                 <h2 className="section-title">
                   <Sparkles size={20} /> Competitive Gap Analysis
                 </h2>
-                <button onClick={handleExport} className="btn-secondary" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <button onClick={handleExportPDF} className="btn-secondary" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <Download size={14} /> Export Report
                 </button>
               </div>
