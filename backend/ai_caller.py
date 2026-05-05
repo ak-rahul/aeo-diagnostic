@@ -37,9 +37,9 @@ load_dotenv()
 _TIMEOUT_S = 30  # per-engine hard timeout
 
 # Model identifiers — overridable via env vars for easy future updates
-_MODEL_GPT    = os.getenv("MODEL_GPT",    "openai/gpt-4o")
-_MODEL_CLAUDE = os.getenv("MODEL_CLAUDE", "anthropic/claude-sonnet-4-5")
-_MODEL_GEMINI = os.getenv("MODEL_GEMINI", "google/gemini-pro-latest")
+_MODEL_GPT    = os.getenv("MODEL_GPT",    "openai/gpt-5.1")
+_MODEL_CLAUDE = os.getenv("MODEL_CLAUDE", "anthropic/claude-sonnet-4.6")
+_MODEL_GEMINI = os.getenv("MODEL_GEMINI", "~google/gemini-pro-latest")
 
 _OPENROUTER_BASE = "https://openrouter.ai/api/v1"
 
