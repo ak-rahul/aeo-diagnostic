@@ -3,14 +3,30 @@ import { motion } from 'framer-motion';
 import { Copy, CheckCircle2 } from 'lucide-react';
 import { ENGINE_CONFIG } from '../constants';
 
-// Fix: use canonical engine keys from constants
 const ENGINES = [
   { id: 'GPT-4o',           label: ENGINE_CONFIG['GPT-4o'].label,           orbClass: ENGINE_CONFIG['GPT-4o'].dotClass },
   { id: 'Claude Sonnet',    label: ENGINE_CONFIG['Claude Sonnet'].label,    orbClass: ENGINE_CONFIG['Claude Sonnet'].dotClass },
   { id: 'Gemini Pro Latest',label: ENGINE_CONFIG['Gemini Pro Latest'].label, orbClass: ENGINE_CONFIG['Gemini Pro Latest'].dotClass },
 ];
 
-function StreamText({ text }) {
+/** Escape HTML and highlight a brand name in text with a glowing span */
+function highlightBrand(text, brand) {
+  if (!brand || !text) return escapeHtml(text || '');
+  const safe = escapeHtml(text);
+  const escaped = brand.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return safe.replace(
+    new RegExp(escaped, 'gi'),
+    m => `<mark style="background:rgba(0,229,255,0.15);color:#00E5FF;border-radius:3px;padding:0 3px;font-weight:600;">${m}</mark>`
+  );
+}
+
+function escapeHtml(t) {
+  return t
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/\*\*(.*?)\*\*/g, '<strong style="color:#FFF">$1</strong>');
+}
+
+function StreamText({ text, userBrand }) {
   const ref = useRef(null);
   const ivRef = useRef(null);
 
@@ -26,11 +42,7 @@ function StreamText({ text }) {
       if (!ref.current || i >= words.length) {
         clearInterval(ivRef.current);
         if (ref.current) {
-          const safe = text
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-            .replace(/\*\*(.*?)\*\*/g, '<strong style="color: #FFF">$1</strong>');
+          const safe = highlightBrand(text, userBrand);
           ref.current.innerHTML = safe;
         }
         return;
@@ -61,7 +73,7 @@ function CopyButton({ text }) {
   );
 }
 
-export default function AIPanels({ responses, isLoading }) {
+export default function AIPanels({ responses, isLoading, userBrand }) {
   return (
     <div className="ai-panels-grid">
       {ENGINES.map((eng, idx) => {
@@ -103,7 +115,7 @@ export default function AIPanels({ responses, isLoading }) {
 
             <div className="panel-content">
               {hasError && <div style={{ color: 'var(--danger)' }}>{resp.error}</div>}
-              {isReady && <StreamText text={resp.text} />}
+              {isReady && <StreamText text={resp.text} userBrand={userBrand} />}
               {isLoading && !isReady && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                   {[90, 70, 85, 40].map((w, i) => (
