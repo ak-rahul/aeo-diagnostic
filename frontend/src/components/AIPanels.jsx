@@ -1,26 +1,21 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
+import { Copy, CheckCircle2 } from 'lucide-react';
 import { ENGINE_CONFIG } from '../constants';
 
-// Use centralized engine config from constants.js — fixes label inconsistency
+// Fix: use canonical engine keys from constants
 const ENGINES = [
-  { id: 'GPT-4o',          label: ENGINE_CONFIG['GPT-4o'].label,          orbClass: ENGINE_CONFIG['GPT-4o'].dotClass },
-  { id: 'Claude Sonnet',   label: ENGINE_CONFIG['Claude Sonnet'].label,   orbClass: ENGINE_CONFIG['Claude Sonnet'].dotClass },
-  { id: 'Gemini 1.5 Pro',  label: ENGINE_CONFIG['Gemini 1.5 Pro'].label,  orbClass: ENGINE_CONFIG['Gemini 1.5 Pro'].dotClass },
+  { id: 'GPT-4o',           label: ENGINE_CONFIG['GPT-4o'].label,           orbClass: ENGINE_CONFIG['GPT-4o'].dotClass },
+  { id: 'Claude Sonnet',    label: ENGINE_CONFIG['Claude Sonnet'].label,    orbClass: ENGINE_CONFIG['Claude Sonnet'].dotClass },
+  { id: 'Gemini Pro Latest',label: ENGINE_CONFIG['Gemini Pro Latest'].label, orbClass: ENGINE_CONFIG['Gemini Pro Latest'].dotClass },
 ];
 
 function StreamText({ text }) {
   const ref = useRef(null);
-  const ivRef = useRef(null);   // store interval in ref so cleanup always works
-  const done = useRef(false);
+  const ivRef = useRef(null);
 
   useEffect(() => {
-    // Reset done flag when text changes so new text re-triggers animation
-    done.current = false;
-
     if (!ref.current || !text) return;
-
-    // Clear any previous interval
     if (ivRef.current) clearInterval(ivRef.current);
 
     const words = text.split(' ');
@@ -30,9 +25,7 @@ function StreamText({ text }) {
     ivRef.current = setInterval(() => {
       if (!ref.current || i >= words.length) {
         clearInterval(ivRef.current);
-        done.current = true;
         if (ref.current) {
-          // Sanitize: only allow <strong> tags, no arbitrary HTML
           const safe = text
             .replace(/&/g, '&amp;')
             .replace(/</g, '&lt;')
@@ -46,13 +39,26 @@ function StreamText({ text }) {
       i += Math.floor(Math.random() * 5) + 1;
     }, 40);
 
-    // Cleanup always clears the interval, regardless of done.current
-    return () => {
-      if (ivRef.current) clearInterval(ivRef.current);
-    };
+    return () => { if (ivRef.current) clearInterval(ivRef.current); };
   }, [text]);
 
   return <div ref={ref} style={{ whiteSpace: 'pre-wrap' }} />;
+}
+
+function CopyButton({ text }) {
+  const [copied, setCopied] = useState(false);
+  const handle = () => {
+    navigator.clipboard.writeText(text || '');
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+  if (!text) return null;
+  return (
+    <button onClick={handle} className="btn-secondary" title="Copy response" style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '3px 8px', fontSize: 11 }}>
+      {copied ? <CheckCircle2 size={12} color="var(--success)" /> : <Copy size={12} />}
+      {copied ? 'Copied' : 'Copy'}
+    </button>
+  );
 }
 
 export default function AIPanels({ responses, isLoading }) {
@@ -62,21 +68,22 @@ export default function AIPanels({ responses, isLoading }) {
         const resp = responses?.find(r => r.engine === eng.id);
         const isReady = Boolean(resp && resp.text);
         const hasError = Boolean(resp?.error);
+        const latency = resp?.latency_s;
 
         return (
-          <motion.div 
+          <motion.div
             key={eng.id}
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: idx * 0.1, duration: 0.5 }}
             className="glass-card"
-            style={{ 
+            style={{
               display: 'flex', flexDirection: 'column', overflow: 'hidden',
               borderColor: (isLoading && !isReady) ? 'rgba(255,255,255,0.2)' : 'var(--border-subtle)'
             }}
           >
-            <div style={{ 
-              display: 'flex', justifyContent: 'space-between', alignItems: 'center', 
+            <div style={{
+              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
               padding: '12px 16px', borderBottom: '1px solid var(--border-subtle)',
               background: 'rgba(0,0,0,0.3)'
             }}>
@@ -84,7 +91,9 @@ export default function AIPanels({ responses, isLoading }) {
                 <div className={`orb ${eng.orbClass}`} style={{ animation: (isLoading && !isReady) ? 'pulse 1.5s infinite' : 'none' }} />
                 {eng.label}
               </div>
-              <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                {latency && <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>{latency}s</span>}
+                <CopyButton text={resp?.text} />
                 {isLoading && !isReady && <span className="badge badge-glow" style={{ color: '#FFF' }}>Streaming</span>}
                 {isReady && <span className="badge badge-success">Complete</span>}
                 {hasError && <span className="badge badge-danger">Failed</span>}
@@ -97,10 +106,9 @@ export default function AIPanels({ responses, isLoading }) {
               {isReady && <StreamText text={resp.text} />}
               {isLoading && !isReady && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                  <div className="skeleton-pulse" style={{ height: 12, width: '90%' }} />
-                  <div className="skeleton-pulse" style={{ height: 12, width: '70%' }} />
-                  <div className="skeleton-pulse" style={{ height: 12, width: '85%' }} />
-                  <div className="skeleton-pulse" style={{ height: 12, width: '40%' }} />
+                  {[90, 70, 85, 40].map((w, i) => (
+                    <div key={i} className="skeleton-pulse" style={{ height: 12, width: `${w}%` }} />
+                  ))}
                 </div>
               )}
               {!isLoading && !isReady && !hasError && (

@@ -1,6 +1,6 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Bot, Sparkles, Download, Search, AlertCircle, RefreshCw, FileJson } from 'lucide-react';
+import { Bot, Sparkles, Download, Search, AlertCircle, FileJson, Link } from 'lucide-react';
 import './index.css';
 import './app.css';
 
@@ -10,9 +10,35 @@ import Leaderboard from './components/Leaderboard';
 import ScoreCard from './components/ScoreCard';
 import GapAnalysis from './components/GapAnalysis';
 import ErrorBoundary from './components/ErrorBoundary';
+import { ToastProvider, useToast } from './components/Toast';
+import HistoryPanel, { saveToHistory } from './components/HistoryPanel';
 import { API_BASE, DEMO_RESULT } from './constants';
 
-export default function App() {
+// --- Health Indicator ---
+function SystemStatus() {
+  const [status, setStatus] = useState('checking');
+
+  useEffect(() => {
+    fetch(`${API_BASE}/api/health`)
+      .then(r => r.ok ? r.json() : Promise.reject())
+      .then(data => setStatus(data.apis?.openrouter ? 'ok' : 'warn'))
+      .catch(() => setStatus('error'));
+  }, []);
+
+  const color = status === 'ok' ? 'var(--success)' : status === 'warn' ? 'var(--warning)' : 'var(--danger)';
+  const label = status === 'ok' ? 'System Active' : status === 'warn' ? 'API Key Missing' : 'Backend Offline';
+
+  return (
+    <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+      <div style={{ width: 6, height: 6, borderRadius: '50%', background: color, boxShadow: `0 0 10px ${color}` }} />
+      <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{label}</span>
+    </div>
+  );
+}
+
+// --- Inner App (needs toast context) ---
+function AppInner() {
+  const toast = useToast();
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
   const [step, setStep] = useState(null);
@@ -20,6 +46,17 @@ export default function App() {
   const [brand, setBrand] = useState('');
   const [requestLatency, setRequestLatency] = useState(null);
   const abortControllerRef = useRef(null);
+  const navRef = useRef(null);
+
+  // Auto-run from URL parameters on mount
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const q = params.get('q');
+    const b = params.get('brand');
+    if (q) {
+      setTimeout(() => run({ query: q, userBrand: b || '' }), 500);
+    }
+  }, []);
 
   const handleCancel = useCallback(() => {
     if (abortControllerRef.current) {
@@ -36,6 +73,12 @@ export default function App() {
     setBrand(userBrand);
     setStep('calling');
     setRequestLatency(null);
+
+    // Update URL to make it shareable
+    const params = new URLSearchParams();
+    params.set('q', query);
+    if (userBrand) params.set('brand', userBrand);
+    window.history.replaceState({}, '', `${window.location.pathname}?${params.toString()}`);
 
     abortControllerRef.current = new AbortController();
 
@@ -58,33 +101,35 @@ export default function App() {
 
       if (!res.ok) {
         let detail = `Server error (${res.status})`;
-        try {
-          const body = await res.json();
-          detail = body.detail || detail;
-        } catch (_) { /* ignore parse failure */ }
+        try { const body = await res.json(); detail = body.detail || detail; } catch (_) {}
         throw new Error(detail);
       }
 
       const data = await res.json();
-      const t1 = performance.now();
-      setRequestLatency(((t1 - t0) / 1000).toFixed(2));
-      
+      const latency = ((performance.now() - t0) / 1000).toFixed(2);
+      setRequestLatency(latency);
       setStep('done');
       setResult(data);
+      saveToHistory(data);
+      toast.success(`Analysis complete — ${data.leaderboard?.length || 0} brands ranked`);
     } catch (err) {
       timers.forEach(clearTimeout);
-
-      if (err.name === 'AbortError') {
-        setLoading(false);
-        setStep(null);
-        return;
-      }
-
+      if (err.name === 'AbortError') { setLoading(false); setStep(null); return; }
       setErrorMsg(err.message || 'Failed to connect to the diagnostic backend.');
+      toast.error(err.message || 'Backend connection failed');
       setStep(null);
     } finally {
       setLoading(false);
     }
+  }, []);
+
+  const loadFromHistory = useCallback((histResult) => {
+    setResult(histResult);
+    setBrand(histResult.user_brand || '');
+    setStep('done');
+    setErrorMsg(null);
+    setRequestLatency(null);
+    toast.info('Loaded from history');
   }, []);
 
   const runDemo = useCallback(({ query, userBrand }) => {
@@ -97,6 +142,7 @@ export default function App() {
     setResult(demo);
     setRequestLatency(null);
     setStep('done');
+    toast.info('Showing sample demo data');
   }, []);
 
   const handleExportPDF = async () => {
@@ -113,8 +159,9 @@ export default function App() {
       const a = Object.assign(document.createElement('a'), { href: url, download: 'aeo-report.pdf' });
       a.click();
       setTimeout(() => URL.revokeObjectURL(url), 100);
+      toast.success('PDF report downloading...');
     } catch {
-      alert('PDF export requires the FastAPI backend to be running.');
+      toast.error('PDF export requires the FastAPI backend to be running.');
     }
   };
 
@@ -122,9 +169,15 @@ export default function App() {
     if (!result) return;
     const blob = new Blob([JSON.stringify(result, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
-    const a = Object.assign(document.createElement('a'), { href: url, download: `aeo-result-${new Date().getTime()}.json` });
+    const a = Object.assign(document.createElement('a'), { href: url, download: `aeo-result-${Date.now()}.json` });
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 100);
+    toast.success('JSON exported');
+  };
+
+  const handleCopyLink = () => {
+    navigator.clipboard.writeText(window.location.href);
+    toast.success('Shareable link copied to clipboard!');
   };
 
   const hasResults = Boolean(result && !loading);
@@ -135,14 +188,16 @@ export default function App() {
       <div className="bg-grid" />
 
       {/* Navbar */}
-      <nav className="navbar">
+      <nav className="navbar" ref={navRef} style={{ position: 'sticky', top: 0, zIndex: 100 }}>
         <div className="brand-logo">
           <Sparkles size={22} className="text-gradient-accent" />
           <span>AEO Diagnostic</span>
         </div>
-        <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-          <div style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--success)', boxShadow: '0 0 10px var(--success)' }} />
-          <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>System Active</span>
+        <div style={{ display: 'flex', gap: 12, alignItems: 'center', position: 'relative' }}>
+          {hasResults && (
+            <HistoryPanel onLoad={loadFromHistory} />
+          )}
+          <SystemStatus />
         </div>
       </nav>
 
@@ -167,7 +222,6 @@ export default function App() {
 
         <QueryInput onSubmit={run} onCancel={handleCancel} isLoading={loading} step={step} />
 
-        {/* Opt-in demo button */}
         {!loading && !hasResults && (
           <div style={{ marginTop: 12, textAlign: 'center' }}>
             <button
@@ -185,12 +239,9 @@ export default function App() {
       {/* Main Content */}
       <main className="main-content">
         <AnimatePresence>
-          {/* Explicit error state */}
           {errorMsg && !loading && (
             <motion.div
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: 'auto' }}
-              exit={{ opacity: 0, height: 0 }}
+              initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
               className="glass"
               style={{ padding: 20, borderRadius: 'var(--radius-md)', borderLeft: '4px solid var(--danger)', display: 'flex', gap: 16, alignItems: 'flex-start', marginBottom: 16 }}
             >
@@ -206,27 +257,20 @@ export default function App() {
           )}
 
           {(loading || hasResults) && (
-            <motion.section
-              initial={{ opacity: 0, y: 30 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.1, duration: 0.6 }}
-            >
+            <motion.section initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1, duration: 0.6 }}>
               <div className="section-header">
                 <h2 className="section-title">
                   <Search size={20} /> Live AI Responses
                 </h2>
-                
                 {hasResults && (
-                  <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+                  <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
                     {requestLatency && (
                       <span className="badge" style={{ fontSize: 11, background: 'rgba(16, 185, 129, 0.1)', color: 'var(--success)', borderColor: 'rgba(16, 185, 129, 0.2)' }}>
-                        ⏱ {requestLatency}s API Latency
+                        ⏱ {requestLatency}s total
                       </span>
                     )}
-                    {result?.from_cache && (
-                      <span className="badge" style={{ fontSize: 11 }}>Cached result</span>
-                    )}
-                    <button onClick={handleExportJSON} className="btn-secondary" title="Download raw JSON data for developers" style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 10px', fontSize: 12 }}>
+                    {result?.from_cache && <span className="badge" style={{ fontSize: 11 }}>Cached</span>}
+                    <button onClick={handleExportJSON} className="btn-secondary" title="Download raw JSON for debugging" style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 10px', fontSize: 12 }}>
                       <FileJson size={14} /> JSON
                     </button>
                   </div>
@@ -239,46 +283,45 @@ export default function App() {
           )}
 
           {hasResults && brand && (
-            <motion.section
-              initial={{ opacity: 0, y: 30 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.2, duration: 0.6 }}
-            >
+            <motion.section initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2, duration: 0.6 }}>
               <div className="section-header">
                 <h2 className="section-title">Visibility Dashboard</h2>
               </div>
               <div className="dashboard-grid">
-                <ErrorBoundary>
-                  <ScoreCard leaderboard={result.leaderboard} userBrand={brand} />
-                </ErrorBoundary>
-                <ErrorBoundary>
-                  <Leaderboard leaderboard={result.leaderboard} userBrand={brand} isLoading={loading} />
-                </ErrorBoundary>
+                <ErrorBoundary><ScoreCard leaderboard={result.leaderboard} userBrand={brand} /></ErrorBoundary>
+                <ErrorBoundary><Leaderboard leaderboard={result.leaderboard} userBrand={brand} isLoading={loading} /></ErrorBoundary>
               </div>
             </motion.section>
           )}
 
           {showGap && (
-            <motion.section
-              initial={{ opacity: 0, y: 30 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.3, duration: 0.6 }}
-            >
+            <motion.section initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3, duration: 0.6 }}>
               <div className="section-header">
                 <h2 className="section-title">
                   <Sparkles size={20} /> Competitive Gap Analysis
                 </h2>
-                <button onClick={handleExportPDF} className="btn-secondary" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <Download size={14} /> Export Report
-                </button>
+                <div style={{ display: 'flex', gap: 10 }}>
+                  <button onClick={handleCopyLink} className="btn-secondary" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <Link size={14} /> Share
+                  </button>
+                  <button onClick={handleExportPDF} className="btn-secondary" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <Download size={14} /> Export PDF
+                  </button>
+                </div>
               </div>
-              <ErrorBoundary>
-                <GapAnalysis gapAnalysis={result.gap_analysis} />
-              </ErrorBoundary>
+              <ErrorBoundary><GapAnalysis gapAnalysis={result.gap_analysis} /></ErrorBoundary>
             </motion.section>
           )}
         </AnimatePresence>
       </main>
     </div>
+  );
+}
+
+export default function App() {
+  return (
+    <ToastProvider>
+      <AppInner />
+    </ToastProvider>
   );
 }

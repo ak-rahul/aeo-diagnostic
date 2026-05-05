@@ -13,72 +13,51 @@ When a shopper asks ChatGPT *"best magnesium supplement for seniors"*, some bran
 
 ---
 
+## Architecture Overview
+
+We recently completed a major architectural overhaul to ensure production-ready reliability, strict security, and cost efficiency:
+
+1. **OpenRouter Integration**: Instead of managing separate OpenAI, Anthropic, and Google API keys and limits, the backend has been fully unified behind **OpenRouter**. We query GPT-4o, Claude Sonnet, and Gemini Pro Latest simultaneously.
+2. **Robust Connection Pooling**: By replacing per-request HTTP clients with a singleton `AsyncOpenAI` client, we significantly dropped connection overhead.
+3. **Fuzzy Brand Matching**: The engine uses `rapidfuzz` to catch misspellings or punctuation differences (e.g. "Doctor's Best" vs "Doctors Best") rather than strict substring matching.
+4. **Security Hardening**:
+   - Explicit CORS origins mapped to environment variables (no more wildcard credentials).
+   - Strict Jinja2 `autoescape` for PDF reports to mitigate injection vulnerabilities.
+   - Per-IP Rate Limiting to prevent API quota drain.
+
+---
+
 ## Quick Start
 
-### 1. Set Up API Keys
+### 1. Configure OpenRouter
+
+Get a single, free API key from [OpenRouter](https://openrouter.ai/keys) and place it in your `.env`.
 
 ```bash
 cp backend/.env.example backend/.env
-# Add your OpenAI, Anthropic, and Google API keys
+# Set your OPENROUTER_API_KEY
 ```
 
-### 2. Install Dependencies (First Time Only)
+### 2. Run the Stack (Windows)
 
-```bash
-# Terminal 1: Backend
-cd backend && pip install -r requirements.txt
-
-# Terminal 2: Frontend
-cd frontend && npm install
-```
-
-### 3. Run the Entire Project (Single Command)
-
-**Windows:**
 Double-click `start.bat` or run it from your terminal:
 ```cmd
 .\start.bat
 ```
 
-This will automatically launch the FastAPI backend (port 8000) in a new window and start the Vite frontend (port 5173) in your current terminal.
+### 3. Run the Stack (Linux/Mac/Render)
+
+```bash
+chmod +x start.sh
+./start.sh
+```
 
 ---
 
-## Tech Stack
-
-| Layer | Tech |
-|---|---|
-| Frontend | React + Vite + Framer Motion |
-| Styling | 21st.dev inspired Glassmorphism & Vanilla CSS |
-| Backend | FastAPI (Python) |
-| AI Calls | `asyncio.gather()` — all 3 engines simultaneously with Tenacity retries |
-| Brand Extraction | Claude Sonnet (structured JSON NER) |
-| Gap Analysis | Claude Sonnet (competitive reasoning) |
-| Export | WeasyPrint + Jinja2 (PDF) |
-
----
-
-## API Endpoints
-
-| Method | Endpoint | Description |
-|---|---|---|
-| `POST` | `/api/diagnostic` | Run full AEO diagnostic |
-| `GET` | `/api/health` | API key status check |
-| `GET` | `/api/export/pdf` | Export last result as PDF |
-
----
-
-## Features
-
-- ⚡ **Single Command Start** — Use `start.bat` to boot the entire stack instantly
-- 🌌 **Ultra-Premium 21st.dev UI** — Dark obsidian theme, glassmorphism, Framer Motion animations
-- ⚡ **Parallel AI calls** — GPT-4o, Claude & Gemini called simultaneously with Tenacity retries
-- 📊 **Live streaming** — See AI responses render word-by-word with pulsing skeleton loaders
-- 🏆 **Brand leaderboard** — Every brand ranked by AI visibility score, exportable to CSV
-- 🎯 **Gap analysis** — Claude identifies exactly what top brands do that yours doesn't
-- 📄 **PDF & CSV Export** — Downloadable reports for team sharing
-- 🔴🟡🟢 **RAG scoring** — Instant visual status for every brand
-- 💾 **Local History** — Automatically saves your recent queries for one-click re-runs
-
----
-
+## Key Features
+- ⚡ **URL Parameter Syncing** — Share links like `?q=best+laptops&brand=Dell` directly with clients.
+- 🌌 **Ultra-Premium 21st.dev UI** — Dark obsidian theme, glassmorphism, Framer Motion animations.
+- 📊 **Developer Export** — Export raw JSON payloads alongside PDF/CSV reports.
+- 🏆 **Interactive Leaderboard** — Search, sort, and analyze brand visibility on-the-fly.
+- 🎯 **Gap analysis** — Claude identifies exactly what top brands do that yours doesn't.
+- 🔴🟡🟢 **RAG scoring** — Instant visual status for every brand based on fuzzy match ranking logic.

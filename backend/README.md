@@ -1,55 +1,26 @@
-# AEO Diagnostic Backend ⚙️
+# AEO Diagnostic Backend
 
-The high-performance FastAPI engine powering parallel AI search analysis.
+This FastAPI backend serves as the orchestration layer for the AEO (Answer Engine Optimization) diagnostic tool. It acts as a unified proxy to OpenRouter, querying multiple LLM endpoints simultaneously, processing their outputs, and determining brand visibility rankings.
 
-## Tech Stack
+## Architecture & Engineering
+- **Unified Gateway**: We use OpenRouter instead of fragmented provider SDKs (OpenAI, Anthropic, Google). This drastically reduces dependency bloat and provides a single billing and rate-limit surface.
+- **Connection Pooling**: Uses the `openai` SDK's `AsyncOpenAI` client as a singleton. This maintains persistent TCP connections via `httpx`, eliminating the latency overhead of establishing new TLS handshakes for every API call.
+- **Resilience**: 
+  - Transient HTTP/Timeout errors are wrapped in `tenacity` exponential backoff retries.
+  - JSON Parsing errors do not crash the engine; they gracefully degrade and return standard error payloads back to the client.
+- **Scoring Engine**: Implements `rapidfuzz` for robust Named Entity Recognition (NER). If a brand is "Doctor's Best" but an LLM outputs "Doctors Best", it is still correctly scored. We also implemented ordinal list scoring (e.g. `1.`, `2.`, `3.`) to accurately map AI recommendations to RAG thresholds.
+- **Security**: 
+  - `slowapi` rate limits incoming requests by IP to prevent quota theft.
+  - Strict CORS validation (`CORS_ORIGINS`).
+  - Jinja2 `autoescape=True` for PDF exports prevents XSS/template injection.
 
-- **FastAPI** — Modern, high-performance Python framework
-- **Pydantic v2** — Strict data validation and schema enforcement
-- **Structlog** — Production-grade structured colored logging
-- **Tenacity** — Robust exponential backoff retry logic for LLM APIs
-- **Cachetools** — 5-minute TTL caching for cost and speed optimization
-- **WeasyPrint** — Headless PDF generation from Jinja2 templates
+## Environment Variables
+See `.env.example` for required variables. The critical ones are:
+- `OPENROUTER_API_KEY`: Required.
+- `CORS_ORIGINS`: Comma separated list of allowed origins.
 
-## Core Architecture
-
-- **Parallel Execution:** Uses `asyncio.gather` to trigger GPT-4o, Claude 3.5 Sonnet, and Gemini 1.5 Pro simultaneously.
-- **Brand Extraction:** Employs Claude's reasoning to identify and normalize brand names from unstructured AI text.
-- **Scoring Engine:** A position-weighted algorithm that calculates visibility based on mention frequency, sentiment, and ranking.
-- **Gap Analysis:** Intelligent comparison logic that identifies what top competitors have that your brand lacks.
-
-## API Specification
-
-| Endpoint | Method | Description |
-|---|---|---|
-| `/api/diagnostic` | `POST` | Primary entry point for running a full AEO scan |
-| `/api/health` | `GET` | Connectivity check and API key validation |
-| `/api/export/pdf` | `GET` | Exports the last generated result as a PDF |
-| `/api/export/pdf-from-result` | `POST` | Stateless PDF generation from a provided JSON result |
-
-## Getting Started
-
-1. **Environment Setup:**
-   Create a `.env` file based on `.env.example`:
-   ```env
-   OPENAI_API_KEY=sk-...
-   ANTHROPIC_API_KEY=sk-ant-...
-   GOOGLE_API_KEY=AIza...
-   ```
-
-2. **Install Dependencies:**
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-3. **Run Server:**
-   ```bash
-   uvicorn main:app --reload --port 8000
-   ```
-
-## Resilience
-
-The backend is hardened for production:
-- **Timeouts:** 30-second hard cap on engine responses.
-- **Graceful Failure:** If one AI engine fails, the system provides a partial report rather than crashing.
-- **Structured Logs:**Machine-readable logs for latency tracking and debugging.
+## Running Locally
+```bash
+pip install -r requirements.txt
+uvicorn main:app --reload
+```

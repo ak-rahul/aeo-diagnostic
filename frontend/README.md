@@ -1,44 +1,22 @@
-# AEO Diagnostic Frontend 🎨
+# AEO Diagnostic Frontend
 
-The high-fidelity, monochromatic dashboard for tracking AI Search visibility.
+This is a Vite + React SPA that provides an ultra-premium, "21st.dev inspired" glassmorphism interface for the Answer Engine Optimization tool.
+
+## Key UX Features
+- **Framer Motion**: Smooth, synchronized entry animations for data-heavy dashboard components.
+- **Optimized Tables**: The Leaderboard component implements real-time client-side search and multi-column sorting without re-fetching data.
+- **URL Parameter Sync**: Searches automatically push `?q=...&brand=...` to the URL history, allowing users to easily share deep links to specific diagnostic reports.
+- **Graceful Error Handling**: Complete with React `ErrorBoundary` wrappers around complex data-viz components, preventing full-page crashes if the backend returns malformed data.
+- **Developer Ergonomics**: A dedicated "JSON Export" button allows engineers to quickly download the raw API payload for prompt debugging without opening Chrome DevTools.
 
 ## Tech Stack
+- **Framework**: React 18 (Vite)
+- **Styling**: Vanilla CSS with modern custom properties (CSS variables) for strict design token management.
+- **Icons**: `lucide-react`
+- **Animations**: `framer-motion`
 
-- **React + Vite** — Ultra-fast development and HMR
-- **Framer Motion** — Fluid layout transitions and entry animations
-- **Lucide React** — Premium iconography
-- **Recharts** — Data visualization for brand scores
-- **CSS3** — Custom glassmorphism and grid-background design system
-
-## Key Features
-
-- **Real-time AI Panels:** Character-by-character streaming of responses from ChatGPT, Claude, and Gemini.
-- **Dynamic Leaderboard:** Real-time ranking of brands with SVG progress bars and RAG status indicators.
-- **Competitive Gap Analysis:** Structured breakdown of actionable insights to improve visibility.
-- **Local Search History:** Persistent storage of past queries for one-click re-runs.
-- **Export Capabilities:** Downloadable CSV of leaderboard data and high-quality PDF reports.
-
-## Getting Started
-
-1. **Install Dependencies:**
-   ```bash
-   npm install
-   ```
-
-2. **Run Development Server:**
-   ```bash
-   npm run dev
-   ```
-
-3. **Production Build:**
-   ```bash
-   npm run build
-   ```
-
-## Design System
-
-The UI is inspired by **21st.dev** and **Vercel** aesthetics:
-- **Primary Color:** Pure White (`#FFFFFF`)
-- **Background:** Obsidian Black (`#000000`)
-- **Accents:** Electric Sparkles and Metallic Gradients
-- **Typography:** Inter (Sans) and Geist Mono (Data)
+## Running Locally
+```bash
+npm install
+npm run dev
+```
