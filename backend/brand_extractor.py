@@ -23,50 +23,47 @@ from logger import log
 load_dotenv()
 
 _EXTRACTION_PROMPT = """\
-You are a brand intelligence analyst. Extract every brand name, product name, \
-or company name mentioned in the AI response below.
+You are a brand intelligence analyst. Extract ONLY company and brand names from the AI response below.
 
-Rules:
-- Include ALL brands, even if mentioned briefly
+STRICT RULES — read carefully:
+- Extract ONLY the parent brand/company name (e.g. "Samsung", "Apple", "Motorola")
+- Do NOT include specific product model names (e.g. NOT "iPhone 18 Pro Max", NOT "Galaxy S26 Ultra", NOT "Edge 60 Ultra")
+- Do NOT include operating systems or software platforms (e.g. NOT "OxygenOS", NOT "iOS", NOT "Android")
+- Do NOT include chip/processor names (e.g. NOT "A20 Pro", NOT "Snapdragon", NOT "Dimensity")
+- Do NOT include generic words like "supplement", "product", "brand", "series", "lineup"
+- Do NOT include common adjectives like "best", "top", "great", "premium"
 - Use the exact capitalisation as written (e.g. "Pure Encapsulations", not "pure encapsulations")
-- Do NOT include generic words like "supplement", "product", "brand"
-- Do NOT include common adjectives like "best", "top", "great"
+- If unsure whether something is a brand or a product model, EXCLUDE it
+
+GOOD examples: ["Apple", "Samsung", "Motorola", "Google", "OnePlus", "Sony", "Xiaomi"]
+BAD examples: ["iPhone 18 Pro Max", "Galaxy S26", "OxygenOS", "A20 Pro", "Snapdragon 8 Elite"]
 
 Response text:
 {text}
 
-Return ONLY a valid JSON array of strings. No markdown. No explanation. Example:
-["Brand A", "Brand B", "Product X"]
+Return ONLY a valid JSON array of brand/company name strings. No markdown. No explanation.
 """
 
 # Model for extraction — lighter model is fine here, saves cost
-_EXTRACT_MODEL = os.getenv("MODEL_EXTRACT", "anthropic/claude-haiku-4-5")
+_EXTRACT_MODEL = os.getenv("MODEL_EXTRACT", "mistralai/mistral-7b-instruct:free")
 _OPENROUTER_BASE = "https://openrouter.ai/api/v1"
 
 
-# ── True module-level singleton client ───────────────────────────────────────
-# Fix: was creating a new AsyncOpenAI (new connection pool) on every call.
-_CLIENT: Any = None
-
-
-def _get_client() -> Any:
-    """Return the module-level singleton AsyncOpenAI client for brand extraction."""
-    global _CLIENT
-    if _CLIENT is None:
-        import openai
-        api_key = os.getenv("OPENROUTER_API_KEY")
-        if not api_key:
-            raise RuntimeError("OPENROUTER_API_KEY not set")
-        _CLIENT = openai.AsyncOpenAI(
-            api_key=api_key,
-            base_url=_OPENROUTER_BASE,
-            default_headers={
-                "HTTP-Referer": os.getenv("SITE_URL", "http://localhost:5173"),
-                "X-Title": os.getenv("SITE_NAME", "AEO Diagnostic"),
-            },
-            timeout=20,
-        )
-    return _CLIENT
+def _get_client():
+    """Singleton-style OpenRouter client for brand extraction."""
+    import openai
+    api_key = os.getenv("OPENROUTER_API_KEY")
+    if not api_key:
+        raise RuntimeError("OPENROUTER_API_KEY not set")
+    return openai.AsyncOpenAI(
+        api_key=api_key,
+        base_url=_OPENROUTER_BASE,
+        default_headers={
+            "HTTP-Referer": os.getenv("SITE_URL", "http://localhost:5173"),
+            "X-Title": os.getenv("SITE_NAME", "AEO Diagnostic"),
+        },
+        timeout=20,
+    )
 
 
 def _validate_and_clean(raw: str) -> list[str]:
@@ -86,10 +83,28 @@ def _validate_and_clean(raw: str) -> list[str]:
     if not isinstance(parsed, list):
         raise ValueError("Response is not a JSON list")
 
+    # Known non-brand noise words
     _NOISE = {
         "amazon", "google", "ai", "the", "a", "an", "and", "or",
         "supplement", "product", "brand", "company", "formula",
+        # OS / software platforms
+        "oxygenos", "ios", "android", "hyperos", "one ui", "miui",
+        "harmonyos", "coloros", "funtouch", "magicos",
+        # Generic tech terms
+        "series", "lineup", "edition", "ultra", "pro", "max", "plus",
+        "flagship", "premium", "tier", "chip", "processor",
     }
+
+    # Pattern: likely a product model name if it contains digits or
+    # looks like "Brand Model123" — filter these out
+    _MODEL_PATTERN = re.compile(
+        r'\b(?:'
+        r'\d+'           # contains digits (e.g. "S26", "18 Pro", "A20")
+        r'|(?:pro|max|ultra|plus|mini|lite|edge|note|fold|flip)\s*\d*'  # model suffixes
+        r')\b',
+        re.IGNORECASE
+    )
+
     result: list[str] = []
     seen: set[str] = set()
     for item in parsed:
@@ -99,6 +114,9 @@ def _validate_and_clean(raw: str) -> list[str]:
         if not item or len(item) < 2:
             continue
         if item.lower() in _NOISE:
+            continue
+        # Skip anything that looks like a product model name
+        if _MODEL_PATTERN.search(item):
             continue
         low = item.lower()
         if low not in seen:
@@ -135,8 +153,8 @@ async def _extract_via_openrouter(text: str) -> list[str]:
     async def _fetch() -> str:
         resp = await client.chat.completions.create(
             model=_EXTRACT_MODEL,
-            max_tokens=512,
-            messages=[{"role": "user", "content": _EXTRACTION_PROMPT.format(text=text[:3000])}],
+            max_tokens=300,  # brand list is short, 300 is plenty
+            messages=[{"role": "user", "content": _EXTRACTION_PROMPT.format(text=text[:2000])}],
         )
         return resp.choices[0].message.content or "[]"
 
@@ -147,7 +165,7 @@ async def _extract_via_openrouter(text: str) -> list[str]:
 
 def _regex_fallback(text: str) -> list[str]:
     """Lightweight regex heuristic for brand extraction when AI is unavailable."""
-    pattern = r"\*{0,2}([A-Z][a-zA-Z']+(?:\s[A-Z][a-zA-Z']+){0,3})\*{0,2}"
+    pattern = r"\*{0,2}([A-Z][a-zA-Z']+(?:\s[A-Z][a-zA-Z']+){0,2})\*{0,2}"
     candidates = re.findall(pattern, text)
     _STOP = {
         "When", "For", "The", "This", "These", "That", "They", "Here",
@@ -156,12 +174,20 @@ def _regex_fallback(text: str) -> list[str]:
         "Good", "More", "Most", "Each", "Both", "Such", "Just", "Note",
         "Key", "Very", "Well", "High", "Low", "New", "Old", "One", "Two",
         "First", "Second", "Third", "Last", "Overall", "Final",
+        # OS / platform names to exclude
+        "OxygenOS", "HarmonyOS", "ColorOS", "HyperOS", "FunTouch",
     }
+    # Filter out strings containing digits (product model numbers)
+    _has_digit = re.compile(r'\d')
     seen: set[str] = set()
     result: list[str] = []
     for c in candidates:
         c = c.strip()
-        if c and c not in _STOP and len(c) > 2 and c.lower() not in seen:
+        if not c or c in _STOP or len(c) <= 2:
+            continue
+        if _has_digit.search(c):  # skip "iPhone 18", "Galaxy S26", "A20 Pro"
+            continue
+        if c.lower() not in seen:
             seen.add(c.lower())
             result.append(c)
     return result[:35]
