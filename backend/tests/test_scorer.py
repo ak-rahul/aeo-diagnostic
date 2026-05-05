@@ -14,7 +14,7 @@ import sys
 import os
 
 # Make backend importable when running from repo root
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "backend"))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 import pytest
 from scorer import _is_mentioned, _score_engine, calculate_visibility_score, build_leaderboard
@@ -108,7 +108,7 @@ class TestScoreEngine:
 class TestCalculateVisibilityScore:
     def test_mentioned_in_all_three(self):
         responses = [
-            {"engine": "GPT-4o", "text": "Pure Encapsulations is excellent."},
+            {"engine": "GPT-5.1", "text": "Pure Encapsulations is excellent."},
             {"engine": "Claude Sonnet", "text": "Pure Encapsulations is highly recommended."},
             {"engine": "Gemini Pro Latest", "text": "Pure Encapsulations is trusted by doctors."},
         ]
@@ -119,7 +119,7 @@ class TestCalculateVisibilityScore:
 
     def test_not_mentioned_anywhere(self):
         responses = [
-            {"engine": "GPT-4o", "text": "Thorne Research is best."},
+            {"engine": "GPT-5.1", "text": "Thorne Research is best."},
             {"engine": "Claude Sonnet", "text": "Life Extension is great."},
             {"engine": "Gemini Pro Latest", "text": "Nature Made is popular."},
         ]
@@ -132,7 +132,7 @@ class TestCalculateVisibilityScore:
         # Spam a brand across all 3 engines in top positions
         text = "1. SuperBrand is the best outstanding premium trusted recommended choice."
         responses = [
-            {"engine": "GPT-4o", "text": text},
+            {"engine": "GPT-5.1", "text": text},
             {"engine": "Claude Sonnet", "text": text},
             {"engine": "Gemini Pro Latest", "text": text},
         ]
@@ -145,7 +145,7 @@ class TestCalculateVisibilityScore:
 class TestBuildLeaderboard:
     def test_ranking_order(self):
         responses = [
-            {"engine": "GPT-4o", "text": "1. Thorne Research is best. 2. Life Extension is good."},
+            {"engine": "GPT-5.1", "text": "1. Thorne Research is best. 2. Life Extension is good."},
         ]
         brands = ["Thorne Research", "Life Extension"]
         board = build_leaderboard(brands, responses)
@@ -153,19 +153,19 @@ class TestBuildLeaderboard:
         assert board[0]["brand"] == "Thorne Research"
 
     def test_empty_brands(self):
-        result = build_leaderboard([], [{"engine": "GPT-4o", "text": "some text"}])
+        result = build_leaderboard([], [{"engine": "GPT-5.1", "text": "some text"}])
         assert result == []
 
     def test_deduplication(self):
         """Case-insensitive duplicates should be counted once."""
-        responses = [{"engine": "GPT-4o", "text": "Thorne Research is great."}]
+        responses = [{"engine": "GPT-5.1", "text": "Thorne Research is great."}]
         brands = ["Thorne Research", "thorne research", "THORNE RESEARCH"]
         board = build_leaderboard(brands, responses)
         assert len(board) == 1
 
     def test_ranks_are_sequential(self):
         responses = [
-            {"engine": "GPT-4o", "text": "Pure Encapsulations, Thorne Research, Life Extension are all good."},
+            {"engine": "GPT-5.1", "text": "Pure Encapsulations, Thorne Research, Life Extension are all good."},
         ]
         brands = ["Pure Encapsulations", "Thorne Research", "Life Extension"]
         board = build_leaderboard(brands, responses)

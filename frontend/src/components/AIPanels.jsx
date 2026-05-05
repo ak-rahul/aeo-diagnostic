@@ -4,9 +4,9 @@ import { Copy, CheckCircle2 } from 'lucide-react';
 import { ENGINE_CONFIG } from '../constants';
 
 const ENGINES = [
-  { id: 'GPT-4o',           label: ENGINE_CONFIG['GPT-4o'].label,           orbClass: ENGINE_CONFIG['GPT-4o'].dotClass },
-  { id: 'Claude Sonnet',    label: ENGINE_CONFIG['Claude Sonnet'].label,    orbClass: ENGINE_CONFIG['Claude Sonnet'].dotClass },
-  { id: 'Gemini Pro Latest',label: ENGINE_CONFIG['Gemini Pro Latest'].label, orbClass: ENGINE_CONFIG['Gemini Pro Latest'].dotClass },
+  { id: 'GPT-5.1', label: ENGINE_CONFIG['GPT-5.1'].label, orbClass: ENGINE_CONFIG['GPT-5.1'].dotClass },
+  { id: 'Claude Sonnet', label: ENGINE_CONFIG['Claude Sonnet'].label, orbClass: ENGINE_CONFIG['Claude Sonnet'].dotClass },
+  { id: 'Gemini Pro Latest', label: ENGINE_CONFIG['Gemini Pro Latest'].label, orbClass: ENGINE_CONFIG['Gemini Pro Latest'].dotClass },
 ];
 
 /** Escape HTML and highlight a brand name in text with a glowing span */

@@ -146,7 +146,7 @@ async def _call_engine(
 
 # ── Public per-engine callers (kept for backward compatibility) ────────────────
 async def call_openai(query: str) -> dict[str, Any]:
-    return await _call_engine(_MODEL_GPT, "GPT-4o", query)
+    return await _call_engine(_MODEL_GPT, "GPT-5.1", query)
 
 
 async def call_claude(query: str) -> dict[str, Any]:

@@ -10,7 +10,7 @@ export const DEMO_QUERIES = [
 // ENGINE_CONFIG — canonical labels used by AIPanels, ScoreCard, and Leaderboard.
 // Keys match the engine names returned by the backend exactly.
 export const ENGINE_CONFIG = {
-  'GPT-4o':         { dotClass: 'gpt',    color: '#10b981', label: 'GPT-4o' },
+  'GPT-5.1':         { dotClass: 'gpt',    color: '#10b981', label: 'GPT-5.1' },
   'Claude Sonnet':  { dotClass: 'claude', color: '#f97316', label: 'Claude Sonnet' },
   'Gemini Pro Latest': { dotClass: 'gemini', color: '#3b82f6', label: 'Gemini Pro Latest' },
 };
@@ -28,7 +28,7 @@ export const DEMO_RESULT = {
   from_cache: false,
   responses: [
     {
-      engine: 'GPT-4o',
+      engine: 'GPT-5.1',
       text: `For seniors looking for the best magnesium supplements, here are my top recommendations:\n\n1. **Pure Encapsulations Magnesium Glycinate** — Top pick for seniors. Highly bioavailable, gentle on the stomach. Pharmaceutical-grade quality with third-party testing.\n\n2. **Thorne Research Magnesium Bisglycinate** — Premium, physician-trusted brand. Excellent absorption for sensitive digestive systems.\n\n3. **Life Extension Magnesium Caps** — Excellent blend of magnesium oxide, citrate, and succinate. Great value and superior bioavailability.\n\n4. **Nature Made Magnesium 250mg** — Affordable, USP-verified, widely trusted. One of America's most recognised supplement brands.\n\n5. **MegaFood Magnesium** — Whole-food based formula, ideal for seniors. Gentle, effective, and highly nutritious.\n\n6. **Doctor's Best High Absorption Magnesium** — TRAACS chelated formula. Science-based and outstanding for sleep quality.`,
       error: null,
     },
@@ -44,14 +44,14 @@ export const DEMO_RESULT = {
     },
   ],
   leaderboard: [
-    { rank:1, brand:'Pure Encapsulations', total_score:89, rag_status:'green', ais_mentioned_in:3, breakdown:{'GPT-4o':{score:40,mentioned:true},'Claude Sonnet':{score:27,mentioned:true},'Gemini Pro Latest':{score:22,mentioned:true}}},
-    { rank:2, brand:'Thorne Research',     total_score:82, rag_status:'green', ais_mentioned_in:3, breakdown:{'GPT-4o':{score:28,mentioned:true},'Claude Sonnet':{score:29,mentioned:true},'Gemini Pro Latest':{score:25,mentioned:true}}},
-    { rank:3, brand:'Life Extension',      total_score:71, rag_status:'green', ais_mentioned_in:3, breakdown:{'GPT-4o':{score:25,mentioned:true},'Claude Sonnet':{score:23,mentioned:true},'Gemini Pro Latest':{score:23,mentioned:true}}},
-    { rank:4, brand:'Nature Made',         total_score:68, rag_status:'green', ais_mentioned_in:3, breakdown:{'GPT-4o':{score:23,mentioned:true},'Claude Sonnet':{score:22,mentioned:true},'Gemini Pro Latest':{score:23,mentioned:true}}},
-    { rank:5, brand:'MegaFood',            total_score:62, rag_status:'amber', ais_mentioned_in:3, breakdown:{'GPT-4o':{score:21,mentioned:true},'Claude Sonnet':{score:20,mentioned:true},'Gemini Pro Latest':{score:21,mentioned:true}}},
-    { rank:6, brand:"Doctor's Best",       total_score:58, rag_status:'amber', ais_mentioned_in:3, breakdown:{'GPT-4o':{score:20,mentioned:true},'Claude Sonnet':{score:19,mentioned:true},'Gemini Pro Latest':{score:19,mentioned:true}}},
-    { rank:7, brand:'Garden of Life',      total_score:47, rag_status:'amber', ais_mentioned_in:2, breakdown:{'GPT-4o':{score:0,mentioned:false},'Claude Sonnet':{score:22,mentioned:true},'Gemini Pro Latest':{score:25,mentioned:true}}},
-    { rank:8, brand:'Swanson',             total_score:35, rag_status:'amber', ais_mentioned_in:2, breakdown:{'GPT-4o':{score:0,mentioned:false},'Claude Sonnet':{score:17,mentioned:true},'Gemini Pro Latest':{score:18,mentioned:true}}},
+    { rank:1, brand:'Pure Encapsulations', total_score:89, rag_status:'green', ais_mentioned_in:3, breakdown:{'GPT-5.1':{score:40,mentioned:true},'Claude Sonnet':{score:27,mentioned:true},'Gemini Pro Latest':{score:22,mentioned:true}}},
+    { rank:2, brand:'Thorne Research',     total_score:82, rag_status:'green', ais_mentioned_in:3, breakdown:{'GPT-5.1':{score:28,mentioned:true},'Claude Sonnet':{score:29,mentioned:true},'Gemini Pro Latest':{score:25,mentioned:true}}},
+    { rank:3, brand:'Life Extension',      total_score:71, rag_status:'green', ais_mentioned_in:3, breakdown:{'GPT-5.1':{score:25,mentioned:true},'Claude Sonnet':{score:23,mentioned:true},'Gemini Pro Latest':{score:23,mentioned:true}}},
+    { rank:4, brand:'Nature Made',         total_score:68, rag_status:'green', ais_mentioned_in:3, breakdown:{'GPT-5.1':{score:23,mentioned:true},'Claude Sonnet':{score:22,mentioned:true},'Gemini Pro Latest':{score:23,mentioned:true}}},
+    { rank:5, brand:'MegaFood',            total_score:62, rag_status:'amber', ais_mentioned_in:3, breakdown:{'GPT-5.1':{score:21,mentioned:true},'Claude Sonnet':{score:20,mentioned:true},'Gemini Pro Latest':{score:21,mentioned:true}}},
+    { rank:6, brand:"Doctor's Best",       total_score:58, rag_status:'amber', ais_mentioned_in:3, breakdown:{'GPT-5.1':{score:20,mentioned:true},'Claude Sonnet':{score:19,mentioned:true},'Gemini Pro Latest':{score:19,mentioned:true}}},
+    { rank:7, brand:'Garden of Life',      total_score:47, rag_status:'amber', ais_mentioned_in:2, breakdown:{'GPT-5.1':{score:0,mentioned:false},'Claude Sonnet':{score:22,mentioned:true},'Gemini Pro Latest':{score:25,mentioned:true}}},
+    { rank:8, brand:'Swanson',             total_score:35, rag_status:'amber', ais_mentioned_in:2, breakdown:{'GPT-5.1':{score:0,mentioned:false},'Claude Sonnet':{score:17,mentioned:true},'Gemini Pro Latest':{score:18,mentioned:true}}},
   ],
   gap_analysis: {
     gaps: [

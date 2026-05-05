@@ -75,12 +75,12 @@ export default function Leaderboard({ leaderboard, userBrand, isLoading }) {
   };
 
   const handleExportCSV = () => {
-    const header = ['Rank', 'Brand', 'Visibility Score', 'GPT-4o Score', 'Claude Score', 'Gemini Score', 'Status'];
+    const header = ['Rank', 'Brand', 'Visibility Score', 'GPT-5.1 Score', 'Claude Score', 'Gemini Score', 'Status'];
     const rows = leaderboard.map(item => [
       item.rank,
       item.brand.replace(/,/g, ''),
       item.total_score,
-      item.breakdown?.['GPT-4o']?.score || 0,
+      item.breakdown?.['GPT-5.1']?.score || 0,
       item.breakdown?.['Claude Sonnet']?.score || 0,
       item.breakdown?.['Gemini Pro Latest']?.score || 0,
       item.rag_status
