@@ -20,3 +20,5 @@ htmlcov/
 
 # Logs
 *.log
+
+.result_cache

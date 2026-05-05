@@ -78,19 +78,29 @@ def _normalise(text: str) -> str:
 
 def _is_mentioned(norm_brand: str, norm_text: str) -> bool:
     """
-    Robust mention check that avoids false positives for short brand names.
+    Robust mention check that eliminates false positives at ALL brand lengths.
 
-    Short brands (< 5 chars after normalisation) use ONLY exact word-boundary
-    regex.  This prevents "NOW" matching inside "know", "Swanson" inside
-    "swansong", etc.
-
-    Longer brands use fuzzy partial_ratio >= 85 which handles punctuation
-    differences like "Doctor's Best" vs "Doctors Best".
+    Strategy:
+      1. Word-boundary regex is ALWAYS the primary check — this correctly
+         rejects 'swanson' inside 'swansong' because \\b requires a true
+         word boundary after the last character.
+      2. Fuzzy matching (partial_ratio >= 90) is a SECONDARY fallback ONLY for
+         multi-word brands (>= 2 words, >= 10 chars) where apostrophes or
+         punctuation may differ — e.g. "Doctor's Best" vs "Doctors Best".
+      3. Single-word brands (e.g. 'Swanson', 'NOW', 'Thorne') get exact
+         word-boundary matching only — no fuzzy fallback.
     """
-    if len(norm_brand) < 5:
-        pattern = r"\b" + re.escape(norm_brand) + r"\b"
-        return bool(re.search(pattern, norm_text))
-    return fuzz.partial_ratio(norm_brand, norm_text) >= 85
+    if not norm_brand or not norm_text:
+        return False
+    # Primary: exact word-boundary regex
+    pattern = r"\b" + re.escape(norm_brand) + r"\b"
+    if re.search(pattern, norm_text):
+        return True
+    # Secondary fuzzy: only for multi-word brands (handles punctuation gaps)
+    words_in_brand = norm_brand.split()
+    if len(words_in_brand) >= 2 and len(norm_brand) >= 10:
+        return fuzz.partial_ratio(norm_brand, norm_text) >= 90
+    return False
 
 
 def _score_engine(brand: str, text: str) -> EngineScore:
